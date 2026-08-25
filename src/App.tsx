@@ -4,30 +4,39 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Language, NavTab, UserRole } from './types';
+import { Language, NavTab, UserRole, AppNotification } from './types';
+import { Case } from './types/database';
 import { Navbar } from './components/Navbar';
 import { HeroBanner } from './components/HeroBanner';
 import { HowItWorksSection } from './components/HowItWorksSection';
 import { StatsBanner } from './components/StatsBanner';
+import { DownloadAppSection } from './components/DownloadAppSection';
 import { Footer } from './components/Footer';
-import { AuthModal } from './components/AuthModal';
-import { AuthView } from './components/views/AuthView';
-import { ChatView } from './components/views/ChatView';
-import { DocumentsView } from './components/views/DocumentsView';
-import { LawyersView } from './components/views/LawyersView';
-import { AdvocateDirectoryView } from './components/views/AdvocateDirectoryView';
-import { SettingsView } from './components/views/SettingsView';
-import { ForLawyersView } from './components/views/ForLawyersView';
-import { MyCasesView } from './components/views/MyCasesView';
-import { PrivacyPolicyView } from './components/views/PrivacyPolicyView';
-import { TermsConditionsView } from './components/views/TermsConditionsView';
-import { DraftDocumentView } from './components/views/DraftDocumentView';
-import { FreeLegalAidView } from './components/views/FreeLegalAidView';
-import { AdminDashboardView } from './components/views/AdminDashboardView';
-import { HelpView } from './components/views/HelpView';
-import { supabase, fetchProfile, createOrUpdateProfile, resolveDisplayName, createCase, fetchUserCases } from './lib/supabase';
+import { LoginView } from './components/views/shared/LoginView';
+import { RegisterView } from './components/views/shared/RegisterView';
+import { ChatView } from './components/views/citizen/ChatView';
+import { DocumentsView } from './components/views/citizen/DocumentsView';
+import { LawyersView } from './components/views/citizen/LawyersView';
+import { AdvocateDirectoryView } from './components/views/citizen/AdvocateDirectoryView';
+import { SettingsView } from './components/views/shared/SettingsView';
+import { ForLawyersView } from './components/views/lawyer/ForLawyersView';
+import { MyCasesView } from './components/views/citizen/MyCasesView';
+import { MessagesView } from './components/views/shared/MessagesView';
+import { PrivacyPolicyView } from './components/views/shared/PrivacyPolicyView';
+import { TermsConditionsView } from './components/views/shared/TermsConditionsView';
+import { DraftDocumentView } from './components/views/citizen/DraftDocumentView';
+import { FreeLegalAidView } from './components/views/citizen/FreeLegalAidView';
+import { AdminDashboardView } from './components/views/admin/AdminDashboardView';
+import { KnowledgeBaseView } from './components/views/admin/KnowledgeBaseView';
+import { SupportView } from './components/views/shared/SupportView';
+import { CaseReportPage } from './components/caseReport/CaseReportPage';
+import { CallCasePickerModal } from './components/CallCasePickerModal';
+import { supabase, fetchProfile, createOrUpdateProfile, resolveDisplayName, createCase, fetchUserCases, fetchLawyerConnectionsForCitizen, fetchLawyerConnectionsForLawyer, getSupabase } from './lib/supabase';
+import { fetchCaseDeadlines } from './lib/db/deadlines';
 import { updateSeoMeta } from './lib/seo';
+import { formatTimeAgo } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { resolveLanguageFromStorage, saveLanguageToStorage } from './components/LanguageSelector';
 
 // ---------------------------------------------------------------------------
 // URL ROUTING — multi-page paths for every tab (History API).
@@ -37,9 +46,11 @@ const TAB_PATHS: Record<NavTab, string> = {
   home: '/',
   'how-it-works': '/how-it-works',
   auth: '/login',
+  register: '/register',
   'for-lawyers': '/for-lawyers',
   'my-cases': '/my-cases',
   chat: '/chat',
+  call: '/call',
   lawyers: '/lawyers',
   advocates: '/advocates',
   documents: '/documents',
@@ -49,7 +60,10 @@ const TAB_PATHS: Record<NavTab, string> = {
   'draft-documents': '/draft-documents',
   'free-legal-aid': '/free-legal-aid',
   admin: '/admin',
-  help: '/help',
+  support: '/support',
+  'knowledge-base': '/knowledge-base',
+  messages: '/messages',
+  'case-report': '/case-report',
 };
 
 function tabFromPath(path: string): NavTab {
@@ -68,17 +82,21 @@ function languageFromProfile(lang?: string | null): Language {
     case 'bengali': return 'bn';
     case 'kannada': return 'kn';
     case 'gujarati': return 'gu';
+    case 'malayalam': return 'ml';
+    case 'punjabi': return 'pa';
+    case 'odia': return 'or';
+    case 'urdu': return 'ur';
     case 'hindi':
-    default: return 'hi';
+    default: return 'hinglish';
   }
 }
 
 export default function App() {
-  // Default language is Hindi ('hi')
-  const [language, setLanguage] = useState<Language>('hi');
+  // Default language reads from localStorage first, then falls back to Hindi
+  const [language, setLanguage] = useState<Language>(() => resolveLanguageFromStorage());
   const [currentTab, setCurrentTab] = useState<NavTab>(() => tabFromPath(window.location.pathname));
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [caseReportCaseId, setCaseReportCaseId] = useState<string | null>(null);
   const [authInitialRole, setAuthInitialRole] = useState<UserRole>('citizen');
   const [pendingRedirectTab, setPendingRedirectTab] = useState<NavTab | null>(null);
   const [currentUser, setCurrentUser] = useState<{
@@ -88,16 +106,46 @@ export default function App() {
     name?: string;
   } | null>(null);
   const [lawyerDirectoryCategory, setLawyerDirectoryCategory] = useState<string | null>(null);
+  const [pendingMessageConnectionId, setPendingMessageConnectionId] = useState<string | undefined>(undefined);
+
+  const [isCallPickerOpen, setIsCallPickerOpen] = useState(false);
+  const [callPickerCases, setCallPickerCases] = useState<Case[]>([]);
+  const [isCreatingCallCase, setIsCreatingCallCase] = useState(false);
+
+  const [isChatPickerOpen, setIsChatPickerOpen] = useState(false);
+  const [chatPickerCases, setChatPickerCases] = useState<Case[]>([]);
+  const [isCreatingChatCase, setIsCreatingChatCase] = useState(false);
 
   const PROTECTED_TABS: NavTab[] = [
     'my-cases',
     'chat',
+    'call',
     'documents',
     'settings',
     'draft-documents',
     'lawyers',
     'admin',
+    'messages',
   ];
+
+  const citizenOnlyTabs: NavTab[] = ['my-cases', 'chat', 'call', 'documents', 'lawyers', 'advocates', 'draft-documents'];
+  const lawyerOnlyTabs: NavTab[] = ['for-lawyers'];
+
+  // Single shared guard function for all tab resolution logic.
+  // Ensures consistent role-based redirects regardless of navigation source.
+  function resolveAllowedTab(tab: NavTab, user: { userId: string; email: string; role: UserRole; name?: string } | null): NavTab {
+    if (PROTECTED_TABS.includes(tab) && !user) return 'auth';
+    if ((tab === 'auth' || tab === 'register') && user) {
+      return user.role === 'lawyer' ? 'for-lawyers' : user.role === 'admin' ? 'admin' : 'my-cases';
+    }
+    if (tab === 'admin' && user?.role !== 'admin') {
+      return user?.role === 'lawyer' ? 'for-lawyers' : 'my-cases';
+    }
+    if (user?.role === 'lawyer' && citizenOnlyTabs.includes(tab)) return 'for-lawyers';
+    if (user?.role === 'citizen' && lawyerOnlyTabs.includes(tab)) return 'my-cases';
+    if (user?.role === 'admin' && (citizenOnlyTabs.includes(tab) || lawyerOnlyTabs.includes(tab))) return 'admin';
+    return tab;
+  }
 
   // Keep up-to-date refs so the popstate listener (registered once) can read
   // the current auth state and tab without re-subscribing.
@@ -120,11 +168,7 @@ export default function App() {
 
     const handlePop = () => {
       let tab = tabFromPath(window.location.pathname);
-      if (PROTECTED_TABS.includes(tab) && !currentUserRef.current) {
-        tab = 'auth';
-      } else if (tab === 'auth' && currentUserRef.current) {
-        tab = currentUserRef.current.role === 'lawyer' ? 'for-lawyers' : 'my-cases';
-      }
+      tab = resolveAllowedTab(tab, currentUserRef.current);
       const didChange = tab !== currentTabRef.current;
       currentTabRef.current = tab;
       setCurrentTab(tab);
@@ -152,6 +196,30 @@ export default function App() {
     updateSeoMeta(currentTab);
   }, [currentTab]);
 
+  // RTL support for Urdu language
+  useEffect(() => {
+    const isRTL = language === 'ur';
+    document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
+    document.body.classList.toggle('rtl', isRTL);
+    if (isRTL) {
+      document.body.style.textAlign = 'right';
+    } else {
+      document.body.style.textAlign = '';
+    }
+  }, [language]);
+
+  // Persist language to localStorage whenever it changes
+  useEffect(() => {
+    saveLanguageToStorage(language);
+  }, [language]);
+
+  // Clear pending message target after MessagesView consumes it
+  useEffect(() => {
+    if (currentTab !== 'messages' && pendingMessageConnectionId) {
+      setPendingMessageConnectionId(undefined);
+    }
+  }, [currentTab, pendingMessageConnectionId]);
+
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [activeCaseNotice, setActiveCaseNotice] = useState<string | null>(null);
 
@@ -167,17 +235,25 @@ export default function App() {
     try {
       const userId = currentUser.userId;
       const userCases = await fetchUserCases(userId);
-      const activeCase = userCases?.find((c) => c.status !== 'closed' && c.status !== 'resolved');
+      const activeCases = userCases?.filter((c) => c.status !== 'closed' && c.status !== 'resolved') || [];
 
-      if (activeCase) {
-        setActiveCaseId(activeCase.id);
-        setCurrentTab('chat');
-        setActiveCaseNotice(`⚠️ Aapka ek active case pehle se chal raha hai (${activeCase.title || 'Legal Consultation'}). Ek waqt mein sirf 1 active case chal sakta hai. Naya case shuru karne ke liye pehle pichhle case ko Close karein.`);
+      if (activeCases.length >= 2) {
+        setActiveCaseNotice(`Aapke paas pehle se ${activeCases.length} active cases hain. Maximum 2 active cases allowed. Naya case shuru karne ke liye pehle kisi existing case ko Close karein.`);
         setTimeout(() => setActiveCaseNotice(null), 6000);
         return;
       }
 
-      const newCase = await createCase(userId, 'New Legal Consultation', 'other');
+      const activeCase = activeCases[0];
+
+      if (activeCase) {
+        setActiveCaseId(activeCase.id);
+        setCurrentTab('chat');
+        setActiveCaseNotice(`⚠️ Aapka ek active case pehle se chal raha hai (${activeCase.title || 'Legal Consultation'}). Naya case shuru karne ke liye pehle pichhle case ko Close karein.`);
+        setTimeout(() => setActiveCaseNotice(null), 6000);
+        return;
+      }
+
+      const newCase = await createCase(userId, 'New Legal Consultation', 'other', { reuseActive: true });
       setActiveCaseId(newCase.id);
       setCurrentTab('chat');
     } catch (err) {
@@ -197,7 +273,7 @@ export default function App() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && isMounted) {
           const profile = await fetchProfile(session.user.id);
-          const role: UserRole = profile?.user_type === 'lawyer' ? 'lawyer' : 'citizen';
+          const role: UserRole = profile?.user_type === 'lawyer' ? 'lawyer' : profile?.user_type === 'admin' ? 'admin' : 'citizen';
           const name = resolveDisplayName({
             profile,
             metadata: session.user.user_metadata || null,
@@ -235,7 +311,7 @@ export default function App() {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user && isMounted) {
           const profile = await fetchProfile(session.user.id);
-          const role: UserRole = profile?.user_type === 'lawyer' ? 'lawyer' : 'citizen';
+          const role: UserRole = profile?.user_type === 'lawyer' ? 'lawyer' : profile?.user_type === 'admin' ? 'admin' : 'citizen';
           const name = resolveDisplayName({
             profile,
             metadata: session.user.user_metadata || null,
@@ -267,44 +343,61 @@ export default function App() {
     if (!currentUser && PROTECTED_TABS.includes(currentTab)) {
       setPendingRedirectTab(currentTab);
       setAuthInitialRole('citizen');
-      setCurrentTab('auth');
-      window.history.replaceState({}, '', TAB_PATHS.auth);
+      const allowed = resolveAllowedTab('auth', null);
+      setCurrentTab(allowed);
+      window.history.replaceState({}, '', TAB_PATHS[allowed]);
       return;
     }
     // Logged-in users hitting the login page are sent to their dashboard.
-    if (currentUser && currentTab === 'auth') {
-      const target = pendingRedirectTab || (currentUser.role === 'lawyer' ? 'for-lawyers' : 'my-cases');
+    if (currentUser && (currentTab === 'auth' || currentTab === 'register')) {
+      const candidate = pendingRedirectTab || (currentUser.role === 'lawyer' ? 'for-lawyers' : currentUser.role === 'admin' ? 'admin' : 'my-cases');
+      const allowed = resolveAllowedTab(candidate, currentUser);
       setPendingRedirectTab(null);
-      setCurrentTab(target);
-      window.history.replaceState({}, '', TAB_PATHS[target]);
+      setCurrentTab(allowed);
+      window.history.replaceState({}, '', TAB_PATHS[allowed]);
+    }
+    // Admin route guard: non-admin users cannot access /admin
+    if (currentUser && currentTab === 'admin' && currentUser.role !== 'admin') {
+      const allowed = resolveAllowedTab('admin', currentUser);
+      setCurrentTab(allowed);
+      window.history.replaceState({}, '', TAB_PATHS[allowed]);
     }
   }, [currentUser, currentTab]);
 
   const handleTabChange = (tab: NavTab) => {
-    // Logged-in users don't need the login page — go to their dashboard.
-    if (tab === 'auth' && currentUser) {
-      setCurrentTab(currentUser.role === 'lawyer' ? 'for-lawyers' : 'my-cases');
+    const allowed = resolveAllowedTab(tab, currentUser);
+    if (allowed !== tab) {
+      setCurrentTab(allowed);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    if (PROTECTED_TABS.includes(tab) && !currentUser) {
-      setPendingRedirectTab(tab);
-      setAuthInitialRole('citizen');
-      setCurrentTab('auth');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (tab === 'call') {
+      (async () => {
+        const citizenId = currentUser?.userId || 'guest_citizen';
+        try {
+          const cases = await fetchUserCases(citizenId);
+          setCallPickerCases(cases || []);
+        } catch {
+          setCallPickerCases([]);
+        }
+        setIsCallPickerOpen(true);
+      })();
       return;
     }
 
-    // Role-based route guard:
-    if (currentUser?.role === 'lawyer') {
-      // Advocates cannot access citizen-only views
-      const citizenOnlyTabs: NavTab[] = ['my-cases', 'chat', 'documents', 'lawyers', 'advocates'];
-      if (citizenOnlyTabs.includes(tab)) {
-        setCurrentTab('for-lawyers');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
+    if (tab === 'chat') {
+      (async () => {
+        const citizenId = currentUser?.userId || 'guest_citizen';
+        try {
+          const cases = await fetchUserCases(citizenId);
+          setChatPickerCases(cases || []);
+        } catch {
+          setChatPickerCases([]);
+        }
+        setIsChatPickerOpen(true);
+      })();
+      return;
     }
 
     setCurrentTab(tab);
@@ -316,6 +409,56 @@ export default function App() {
       }
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCallPickerSelectCase = (caseId: string) => {
+    setIsCallPickerOpen(false);
+    setActiveCaseId(caseId);
+    setCurrentTab('call');
+  };
+
+  const handleCallPickerCreateNewCase = async () => {
+    if (!currentUser) return;
+    setIsCreatingCallCase(true);
+    try {
+      const newCase = await createCase(currentUser.userId, 'New Case (Voice Call)');
+      setIsCallPickerOpen(false);
+      setActiveCaseId(newCase.id);
+      setCurrentTab('call');
+    } catch (e: any) {
+      if (e?.message === 'ACTIVE_CASE_LIMIT_REACHED') {
+        alert(language === 'hi' ? 'Aapke paas pehle se 2 active cases hain. Naya case banane ke liye pehle koi existing case close karein.' : 'You already have 2 active cases. Close an existing case before creating a new one.');
+      } else {
+        console.warn('Failed to create case from call picker:', e);
+      }
+    } finally {
+      setIsCreatingCallCase(false);
+    }
+  };
+
+  const handleChatPickerSelectCase = (caseId: string) => {
+    setIsChatPickerOpen(false);
+    setActiveCaseId(caseId);
+    setCurrentTab('chat');
+  };
+
+  const handleChatPickerCreateNewCase = async () => {
+    if (!currentUser) return;
+    setIsCreatingChatCase(true);
+    try {
+      const newCase = await createCase(currentUser.userId, 'New Legal Consultation');
+      setIsChatPickerOpen(false);
+      setActiveCaseId(newCase.id);
+      setCurrentTab('chat');
+    } catch (e: any) {
+      if (e?.message === 'ACTIVE_CASE_LIMIT_REACHED') {
+        alert(language === 'hi' ? 'Aapke paas pehle se 2 active cases hain. Naya case banane ke liye pehle koi existing case close karein.' : 'You already have 2 active cases. Close an existing case before creating a new one.');
+      } else {
+        console.warn('Failed to create case from chat picker:', e);
+      }
+    } finally {
+      setIsCreatingChatCase(false);
+    }
   };
 
   const handleOpenAuth = (role: UserRole = 'citizen') => {
@@ -332,26 +475,25 @@ export default function App() {
       phone: profile?.phone,
       role,
     });
-    setCurrentUser({
+    const userObj = {
       userId: finalUserId,
       email,
       role,
       name,
-    });
+    };
+    setCurrentUser(userObj);
+
+    // Privacy: never carry the previous user's active case into the new session.
+    setActiveCaseId(null);
 
     if (profile?.preferred_language) {
       setLanguage(languageFromProfile(profile.preferred_language));
     }
 
-    if (pendingRedirectTab) {
-      const target = pendingRedirectTab;
-      setPendingRedirectTab(null);
-      setCurrentTab(target);
-    } else if (role === 'lawyer') {
-      setCurrentTab('for-lawyers');
-    } else {
-      setCurrentTab('my-cases');
-    }
+    const candidate = pendingRedirectTab || (role === 'lawyer' ? 'for-lawyers' : role === 'admin' ? 'admin' : 'my-cases');
+    const allowed = resolveAllowedTab(candidate, userObj);
+    setPendingRedirectTab(null);
+    setCurrentTab(allowed);
   };
 
   const handleLogout = async () => {
@@ -380,6 +522,186 @@ export default function App() {
     senderName: string;
     content: string;
   } | null>(null);
+  const [appNotifications, setAppNotifications] = useState<AppNotification[]>([]);
+
+  // Notification fetch helper
+  async function fetchUnreadCountForConnection(connectionId: string, currentUserId: string): Promise<number> {
+    const client = getSupabase();
+    if (!client) return 0;
+    const { count } = await client
+      .from('direct_messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('connection_id', connectionId)
+      .eq('is_read', false)
+      .neq('sender_id', currentUserId);
+    return count ?? 0;
+  }
+
+  async function fetchNotifications(userId: string, userRole: UserRole): Promise<AppNotification[]> {
+    const notifs: AppNotification[] = [];
+    const now = new Date();
+
+    if (userRole === 'citizen') {
+      try {
+        const connections = await fetchLawyerConnectionsForCitizen(userId);
+        for (const conn of connections) {
+          if (conn.status === 'accepted' || conn.status === 'rejected') {
+            const name = conn.lawyer?.profile?.full_name || 'Your advocate';
+            notifs.push({
+              id: `conn-${conn.id}-${conn.status}`,
+              type: conn.status === 'accepted' ? 'connection_accepted' : 'connection_declined',
+              message: conn.status === 'accepted'
+                ? `${name} accepted your request`
+                : `${name} declined your request`,
+              icon: conn.status === 'accepted' ? '✅' : '❌',
+              is_read: false,
+              linkTab: conn.status === 'accepted' ? 'messages' : undefined,
+              created_at: conn.requested_at || now.toISOString(),
+              timeAgo: formatTimeAgo(conn.requested_at || now.toISOString()),
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const connections = await fetchLawyerConnectionsForCitizen(userId);
+        const accepted = connections.filter(c => c.status === 'accepted');
+        const results = await Promise.allSettled(
+          accepted.map(c => fetchUnreadCountForConnection(c.id, userId))
+        );
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value > 0) {
+            const conn = accepted[i];
+            const name = conn.lawyer?.profile?.full_name || 'Your advocate';
+            notifs.push({
+              id: `msg-${conn.id}`,
+              type: 'new_message',
+              message: `${r.value} new message${r.value > 1 ? 's' : ''} from ${name}`,
+              icon: '💬',
+              is_read: false,
+              linkTab: 'messages',
+              created_at: now.toISOString(),
+              timeAgo: 'Recently',
+            });
+          }
+        });
+      } catch {}
+
+      try {
+        const deadlines = await fetchCaseDeadlines(userId);
+        const threeDays = 3 * 24 * 60 * 60 * 1000;
+        for (const d of deadlines) {
+          const due = new Date(d.due_date);
+          const diff = due.getTime() - now.getTime();
+          if (diff > 0 && diff <= threeDays) {
+            notifs.push({
+              id: `deadline-${d.id}`,
+              type: 'deadline_soon',
+              message: `Deadline in ${Math.ceil(diff / 86400000)}d: ${d.deadline_type}`,
+              icon: '⚠️',
+              is_read: false,
+              linkTab: 'my-cases',
+              created_at: d.due_date,
+              timeAgo: formatTimeAgo(d.due_date),
+            });
+          }
+        }
+      } catch {}
+    }
+
+    if (userRole === 'lawyer') {
+      try {
+        const connections = await fetchLawyerConnectionsForLawyer(userId);
+        const pending = connections.filter(c => c.status === 'requested');
+        for (const conn of pending) {
+          const name = conn.citizen_profile?.full_name || 'A citizen';
+          notifs.push({
+            id: `req-${conn.id}`,
+            type: 'new_request',
+            message: `${name} sent you a case request`,
+            icon: '📋',
+            is_read: false,
+            linkTab: 'for-lawyers',
+            created_at: conn.requested_at || now.toISOString(),
+            timeAgo: formatTimeAgo(conn.requested_at || now.toISOString()),
+          });
+        }
+      } catch {}
+
+      try {
+        const connections = await fetchLawyerConnectionsForLawyer(userId);
+        const accepted = connections.filter(c => c.status === 'accepted');
+        const results = await Promise.allSettled(
+          accepted.map(c => fetchUnreadCountForConnection(c.id, userId))
+        );
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value > 0) {
+            const conn = accepted[i];
+            const name = conn.citizen_profile?.full_name || 'A citizen';
+            notifs.push({
+              id: `msg-${conn.id}`,
+              type: 'new_message',
+              message: `${r.value} new message${r.value > 1 ? 's' : ''} from ${name}`,
+              icon: '💬',
+              is_read: false,
+              linkTab: 'messages',
+              created_at: now.toISOString(),
+              timeAgo: 'Recently',
+            });
+          }
+        });
+      } catch {}
+    }
+
+    const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    return notifs.filter(n =>
+      !n.is_read || new Date(n.created_at).getTime() > sevenDaysAgo
+    );
+  }
+
+  // Poll + Realtime for notifications
+  useEffect(() => {
+    if (!currentUser) { setAppNotifications([]); return; }
+
+    let pollTimer: ReturnType<typeof setInterval>;
+    let channelConn: any = null;
+    let channelMsg: any = null;
+
+    const load = async () => {
+      const notifs = await fetchNotifications(currentUser.userId, currentUser.role);
+      setAppNotifications(notifs);
+    };
+
+    load();
+    pollTimer = setInterval(load, 30_000);
+
+    const client = getSupabase();
+    if (client) {
+      channelConn = client
+        .channel('notif_connections')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'lawyer_connections' }, load)
+        .subscribe();
+
+      channelMsg = client
+        .channel('notif_messages')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, load)
+        .subscribe();
+    }
+
+    return () => {
+      clearInterval(pollTimer);
+      if (client) {
+        if (channelConn) client.removeChannel(channelConn);
+        if (channelMsg) client.removeChannel(channelMsg);
+      }
+    };
+  }, [currentUser?.userId]);
+
+  const handleMarkNotifRead = (id: string) => {
+    setAppNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+  };
+
+  const handleClearAllNotifs = () => setAppNotifications([]);
 
   useEffect(() => {
     const handleLawyerMsg = (e: any) => {
@@ -398,7 +720,7 @@ export default function App() {
   }, []);
 
   // Pages where Footer is required
-  const SHOW_FOOTER_PAGES: NavTab[] = ['home', 'how-it-works', 'documents', 'settings', 'privacy', 'terms', 'lawyers', 'advocates', 'help', 'draft-documents', 'free-legal-aid'];
+  const SHOW_FOOTER_PAGES: NavTab[] = ['home', 'how-it-works', 'documents', 'settings', 'privacy', 'terms', 'lawyers', 'advocates', 'support', 'draft-documents', 'free-legal-aid'];
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FFFFFF] text-[#111827] font-sans">
@@ -438,16 +760,23 @@ export default function App() {
       )}
       
       {/* Sticky App Header & Top Navigation Bar */}
-      {currentTab !== 'auth' && currentTab !== 'chat' && currentTab !== 'my-cases' && currentTab !== 'for-lawyers' && (
+      {currentTab !== 'auth' && currentTab !== 'chat' && currentTab !== 'for-lawyers' && (
         <Navbar
           currentTab={currentTab}
           onTabChange={handleTabChange}
           language={language}
           onLanguageChange={setLanguage}
           onOpenAuth={() => handleOpenAuth('citizen')}
+          onSignUp={() => {
+            setAuthInitialRole('citizen');
+            handleTabChange('register');
+          }}
           currentUser={currentUser}
           onLogout={handleLogout}
           pendingRequestsCount={pendingRequestsCount}
+          notifications={appNotifications}
+          onMarkNotifRead={handleMarkNotifRead}
+          onClearAllNotifs={handleClearAllNotifs}
         />
       )}
 
@@ -492,12 +821,24 @@ export default function App() {
 
                 {/* 3. Dark Navy Stats Banner */}
                 <StatsBanner />
+
+                {/* 4. Download Our App */}
+                <DownloadAppSection />
               </>
             ) : currentTab === 'auth' ? (
-              <AuthView
+              <LoginView
                 language={language}
                 onLoginSuccess={handleLoginSuccess}
+                onGoToRegister={() => handleTabChange('register')}
                 onGoToLawyerPortal={() => handleTabChange('for-lawyers')}
+                onBackToHome={() => handleTabChange('home')}
+                initialRole={authInitialRole}
+              />
+            ) : currentTab === 'register' ? (
+              <RegisterView
+                language={language}
+                onLoginSuccess={handleLoginSuccess}
+                onGoToLogin={() => handleTabChange('auth')}
                 onBackToHome={() => handleTabChange('home')}
                 initialRole={authInitialRole}
               />
@@ -505,8 +846,15 @@ export default function App() {
               <ForLawyersView
                 language={language}
                 currentUser={currentUser}
-                onOpenLawyerAuth={() => handleOpenAuth('lawyer')}
+                onOpenLawyerAuth={() => {
+                  setAuthInitialRole('lawyer');
+                  handleTabChange('register');
+                }}
                 onBackToHome={() => handleTabChange('home')}
+                onOpenMessages={(connectionId) => {
+                  setPendingMessageConnectionId(connectionId);
+                  handleTabChange('messages');
+                }}
                 onPendingCountChange={setPendingRequestsCount}
                 onLoginSuccess={handleLoginSuccess}
                 onLogout={handleLogout}
@@ -521,10 +869,27 @@ export default function App() {
                   setActiveCaseId(cId);
                   setCurrentTab('chat');
                 }}
-                onBackToHome={() => handleTabChange('home')}
-                onLogout={handleLogout}
+                onViewCaseReport={(cId) => {
+                  setCaseReportCaseId(cId);
+                  handleTabChange('case-report');
+                }}
+                onNavigate={handleTabChange}
               />
-            ) : currentTab === 'chat' ? (
+            ) : currentTab === 'messages' ? (
+              <MessagesView
+                language={language}
+                currentUser={currentUser}
+                onBackToHome={() => handleTabChange('my-cases')}
+                initialConnectionId={pendingMessageConnectionId}
+              />
+            ) : currentTab === 'case-report' ? (
+              <CaseReportPage
+                caseId={caseReportCaseId || activeCaseId}
+                currentUser={currentUser}
+                onBack={() => handleTabChange('my-cases')}
+                onNavigate={handleTabChange}
+              />
+            ) : currentTab === 'chat' || currentTab === 'call' ? (
               <ChatView
                 language={language}
                 onLanguageChange={setLanguage}
@@ -537,6 +902,7 @@ export default function App() {
                   setLawyerDirectoryCategory(category || null);
                   setCurrentTab('lawyers');
                 }}
+                autoOpenCall={currentTab === 'call'}
               />
             ) : currentTab === 'documents' ? (
               <DocumentsView
@@ -556,6 +922,7 @@ export default function App() {
                   if (cId) setActiveCaseId(cId);
                   setCurrentTab('chat');
                 }}
+                onGoToMessages={() => handleTabChange('messages')}
                 onRequireAuth={() => handleOpenAuth('citizen')}
               />
             ) : currentTab === 'advocates' ? (
@@ -598,12 +965,17 @@ export default function App() {
               <AdminDashboardView
                 language={language}
                 onBackToHome={() => handleTabChange('home')}
+                currentUser={currentUser}
               />
-            ) : currentTab === 'help' ? (
-              <HelpView
+            ) : currentTab === 'knowledge-base' ? (
+              <KnowledgeBaseView
+                onBackToHome={() => handleTabChange('home')}
+              />
+            ) : currentTab === 'support' ? (
+              <SupportView
                 language={language}
                 onBackToHome={() => handleTabChange('home')}
-                onNavigate={handleTabChange}
+                currentUser={currentUser}
               />
             ) : null}
           </motion.div>
@@ -615,19 +987,34 @@ export default function App() {
         <Footer
           language={language}
           onTabChange={handleTabChange}
-          onOpenAuth={handleOpenAuth}
+          onOpenAuth={(role: UserRole) => {
+            setAuthInitialRole(role);
+            if (role === 'lawyer') {
+              handleTabChange('register');
+            } else {
+              handleTabChange('auth');
+            }
+          }}
           currentUser={currentUser}
         />
       )}
 
-      {/* Authentication Modal */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        initialRole={authInitialRole}
-        language={language}
-        onLoginSuccess={handleLoginSuccess}
-        onGoToLawyerPortal={() => handleTabChange('for-lawyers')}
+      <CallCasePickerModal
+        isOpen={isCallPickerOpen}
+        onClose={() => setIsCallPickerOpen(false)}
+        cases={callPickerCases}
+        onSelectCase={handleCallPickerSelectCase}
+        onCreateNewCase={handleCallPickerCreateNewCase}
+        isCreatingCase={isCreatingCallCase}
+      />
+
+      <CallCasePickerModal
+        isOpen={isChatPickerOpen}
+        onClose={() => setIsChatPickerOpen(false)}
+        cases={chatPickerCases}
+        onSelectCase={handleChatPickerSelectCase}
+        onCreateNewCase={handleChatPickerCreateNewCase}
+        isCreatingCase={isCreatingChatCase}
       />
 
     </div>

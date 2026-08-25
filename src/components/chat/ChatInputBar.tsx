@@ -18,6 +18,10 @@ interface ChatInputBarProps {
   voiceOutputEnabled: boolean;
   onToggleVoiceOutput: (enabled: boolean) => void;
   stopSpeechOutput: () => void;
+  fileSizeError?: string | null;
+  aiStatus?: 'active' | 'error' | 'reconnecting';
+  onStop?: () => void;
+  disabled?: boolean;
 }
 
 export const ChatInputBar: React.FC<ChatInputBarProps> = ({
@@ -34,6 +38,10 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   voiceOutputEnabled,
   onToggleVoiceOutput,
   stopSpeechOutput,
+  fileSizeError,
+  aiStatus,
+  onStop,
+  disabled = false,
 }) => {
   const [isListening, setIsListening] = useState(false);
   const [micVolume, setMicVolume] = useState<number>(0);
@@ -71,6 +79,8 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
       setIsListening(false);
       setMicVolume(0);
 
+      // Stop SpeechRecognition first and capture its base text
+      let baseText = inputText.trim();
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -81,11 +91,15 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
         const whisperText = await webAudioSessionRef.current.stopAndTranscribe(language);
         webAudioSessionRef.current = null;
         if (whisperText && whisperText.trim()) {
-          setInputText((prev) => {
-            const trimmedPrev = prev.trim();
-            return trimmedPrev ? `${trimmedPrev} ${whisperText.trim()}` : whisperText.trim();
-          });
+          // Replace the live-recognition text with the final Whisper transcript
+          setInputText(whisperText.trim());
+        } else if (!whisperText || !whisperText.trim()) {
+          // If Whisper returned nothing, keep the SpeechRecognition text
+          setInputText(baseText);
         }
+      } else {
+        // No web audio session, keep SpeechRecognition text
+        setInputText(baseText);
       }
       return;
     }
@@ -192,18 +206,24 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
         </label>
       </div>
 
-      <div className="bg-[#F8FAFC] rounded-2xl p-2.5 border border-[#CBD5E1] focus-within:border-[#0F1D38] focus-within:ring-2 focus-within:ring-[#0F1D38]/10 transition-all flex items-end gap-2 shadow-2xs">
+      <div className="bg-[#F8FAFC] rounded-2xl p-2.5 border border-[#CBD5E1] focus-within:border-[#0F1D38] focus-within:ring-2 focus-within:ring-[#0F1D38]/10 transition-all flex items-end gap-2 shadow-2xs relative">
         <input
           type="file"
           ref={fileInputRef}
           onChange={onFileChange}
           className="hidden"
-          accept="image/*"
+          accept="image/*,application/pdf"
         />
+        {fileSizeError && (
+          <div className="absolute -top-8 left-0 right-0 text-xs text-[#EF4444] bg-[#FEF2F2] border border-[#EF4444]/30 px-2 py-1 rounded-lg animate-fade-in">
+            {fileSizeError}
+          </div>
+        )}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="p-2.5 rounded-xl text-[#64748B] hover:text-[#0F1D38] hover:bg-[#E2E8F0] transition-colors cursor-pointer shrink-0 mb-0.5"
-          title="Attach legal document photo (Stamp Paper, Registry, Will, Sale Deed, FIR, Notice)"
+          disabled={disabled}
+          className="p-2.5 rounded-xl text-[#64748B] hover:text-[#0F1D38] hover:bg-[#E2E8F0] transition-colors cursor-pointer shrink-0 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Attach legal document photo (Stamp Paper, Registry, Will, Sale Deed, FIR, Notice, PDF)"
         >
           <Paperclip className="w-5 h-5" />
         </button>
@@ -213,14 +233,15 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleTextareaKeyDown}
-          placeholder={PLACEHOLDERS[language]}
+          placeholder={disabled ? (language === 'hi' ? 'Case band hai — naye sandesh band hain' : 'Case closed — messages disabled') : PLACEHOLDERS[language]}
           rows={1}
-          className="flex-1 bg-transparent border-0 focus:outline-none resize-none text-sm leading-relaxed text-[#0F1D38] placeholder-[#94A3B8] py-1.5 px-1 min-h-[28px] max-h-[112px] overflow-y-hidden transition-all duration-75"
+          disabled={disabled}
+          className="flex-1 bg-transparent border-0 focus:outline-none resize-none text-sm leading-relaxed text-[#0F1D38] placeholder-[#94A3B8] py-1.5 px-1 min-h-[28px] max-h-[112px] overflow-y-hidden transition-all duration-75 disabled:cursor-not-allowed"
         />
 
         <button
           onClick={toggleListening}
-          className={`p-2.5 rounded-xl transition-all cursor-pointer shrink-0 mb-0.5 ${
+          className={`p-2.5 rounded-xl transition-all cursor-pointer shrink-0 mb-0.5 relative ${
             isListening
               ? 'bg-[#EF4444] text-[#FFFFFF] animate-pulse shadow-md'
               : 'text-[#64748B] hover:text-[#0F1D38] hover:bg-[#E2E8F0]'
@@ -228,23 +249,50 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
           title="Speak message"
         >
           {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          {isListening && (
+            <div className="absolute -right-1 -top-1 w-6 h-6 flex items-center justify-center">
+              <div
+                className="w-4 h-4 rounded-full bg-[#FFFFFF]/30 animate-ping"
+                style={{ transform: `scale(${0.5 + micVolume * 1.5})` }}
+              />
+            </div>
+          )}
         </button>
 
-        <button
-          onClick={onSend}
-          disabled={isLoading || (!inputText.trim() && !selectedFile)}
-          className="w-10 h-10 rounded-xl bg-[#0F1D38] hover:bg-[#1A2D54] disabled:opacity-40 text-[#FFFFFF] flex items-center justify-center transition-all shadow-xs cursor-pointer shrink-0 mb-0.5"
-          title="Send message"
-        >
-          <Send className="w-4 h-4 text-[#D98800]" />
-        </button>
+        {isLoading && onStop ? (
+          <button
+            onClick={onStop}
+            className="w-10 h-10 rounded-xl bg-[#EF4444] hover:bg-[#DC2626] text-[#FFFFFF] flex items-center justify-center transition-all shadow-xs cursor-pointer shrink-0 mb-0.5 animate-pulse"
+            title="Stop generating"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={disabled || isLoading || (!inputText.trim() && !selectedFile)}
+            className="w-10 h-10 rounded-xl bg-[#0F1D38] hover:bg-[#1A2D54] disabled:opacity-40 text-[#FFFFFF] flex items-center justify-center transition-all shadow-xs cursor-pointer shrink-0 mb-0.5 disabled:cursor-not-allowed"
+            title="Send message"
+          >
+            <Send className="w-4 h-4 text-[#D98800]" />
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col sm:flex-row items-center justify-end gap-1 text-[11px] text-[#64748B] px-1 pt-0.5">
         <div className="flex items-center gap-1.5 font-medium shrink-0">
-          <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
-          <span className="text-[#0F1D38] font-bold">
-            Groq AI Active
+          <span className={`w-2 h-2 rounded-full animate-ping ${
+            aiStatus === 'active' ? 'bg-[#10B981]' :
+            aiStatus === 'error' ? 'bg-[#EF4444]' :
+            'bg-[#F59E0B]'
+          }`} />
+          <span className={`text-[#0F1D38] font-bold ${
+            aiStatus === 'error' ? 'text-[#EF4444]' :
+            aiStatus === 'reconnecting' ? 'text-[#F59E0B]' : ''
+          }`}>
+            {aiStatus === 'active' ? 'Groq AI Active' :
+             aiStatus === 'error' ? 'Groq AI Error' :
+             'Reconnecting…'}
           </span>
         </div>
       </div>

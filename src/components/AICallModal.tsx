@@ -325,22 +325,33 @@ export const AICallModal: React.FC<AICallModalProps> = ({
         callAudioSessionRef.current = audioSession;
       }
 
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.onstart = null;
-            recognitionRef.current.onresult = null;
-            recognitionRef.current.onerror = null;
-            recognitionRef.current.onend = null;
-            recognitionRef.current.abort();
-          } catch (e) {}
-        }
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.onstart = null;
+              recognitionRef.current.onresult = null;
+              recognitionRef.current.onerror = null;
+              recognitionRef.current.onend = null;
+              recognitionRef.current.abort();
+            } catch (e) {}
+          }
 
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = language === 'en' ? 'en-IN' : 'hi-IN';
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          const langMap: Record<string, string> = {
+            en: 'en-IN',
+            hi: 'hi-IN',
+            hinglish: 'hi-IN',
+            ta: 'ta-IN',
+            te: 'te-IN',
+            mr: 'mr-IN',
+            bn: 'bn-IN',
+            kn: 'kn-IN',
+            gu: 'gu-IN',
+          };
+          recognition.lang = langMap[language] || 'hi-IN';
 
         lastTranscriptRef.current = '';
 

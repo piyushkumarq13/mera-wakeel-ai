@@ -140,7 +140,10 @@ create table if not exists direct_messages (
   connection_id uuid not null references lawyer_connections(id) on delete cascade,
   sender_id text not null,
   sender_type text not null check (sender_type in ('lawyer', 'citizen')),
-  content text not null,
+  content text,
+  attachment_url text,
+  attachment_type text,
+  attachment_name text,
   sent_at timestamptz default now()
 );
 
@@ -210,6 +213,76 @@ create index if not exists idx_generated_documents_citizen_id on generated_docum
 create index if not exists idx_analytics_events_name on analytics_events(event_name);
 create index if not exists idx_analytics_events_created_at on analytics_events(created_at);
 
+-- 17. Case Summaries Table (structured case report data)
+create table if not exists case_summaries (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null references cases(id) on delete cascade,
+  version int not null default 1,
+  case_title text,
+  case_category text,
+  case_sub_category text,
+  incident_date text,
+  location text,
+  complainant_name text,
+  complainant_role text,
+  complainant_details text,
+  opposite_party_name text,
+  opposite_party_role text,
+  opposite_party_details text,
+  relationship_between_parties text,
+  executive_summary text,
+  key_facts jsonb default '[]'::jsonb,
+  disputed_facts jsonb default '[]'::jsonb,
+  documents_list jsonb default '[]'::jsonb,
+  evidence_list jsonb default '[]'::jsonb,
+  witnesses jsonb default '[]'::jsonb,
+  applicable_laws jsonb default '[]'::jsonb,
+  legal_questions jsonb default '[]'::jsonb,
+  ai_analysis text,
+  ai_reasoning text,
+  case_strength_score int,
+  score_reasoning text,
+  positive_factors jsonb default '[]'::jsonb,
+  uncertain_factors jsonb default '[]'::jsonb,
+  actions_already_taken jsonb default '[]'::jsonb,
+  recommended_next_steps jsonb default '[]'::jsonb,
+  case_timeline jsonb default '[]'::jsonb,
+  missing_information jsonb default '[]'::jsonb,
+  questions_for_lawyer jsonb default '[]'::jsonb,
+  report_id text,
+  report_status text default 'DRAFT',
+  short_brief text,
+  assigned_lawyer_id uuid references lawyers(id) on delete set null,
+  assigned_lawyer_name text,
+  lawyer_accepted_at timestamptz,
+  lawyer_request_status text default 'none',
+  ai_generated_at timestamptz default now(),
+  ai_last_updated_at timestamptz default now(),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(case_id, version)
+);
+
+-- 18. Lawyer Notes Table
+create table if not exists lawyer_notes (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null references cases(id) on delete cascade,
+  lawyer_id uuid not null references lawyers(id) on delete cascade,
+  notes text,
+  legal_strategy text,
+  client_instructions text,
+  next_hearing date,
+  follow_up_date date,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(case_id, lawyer_id)
+);
+
+create index if not exists idx_case_summaries_case_id on case_summaries(case_id);
+create index if not exists idx_case_summaries_report_status on case_summaries(report_status);
+create index if not exists idx_lawyer_notes_case_id on lawyer_notes(case_id);
+create index if not exists idx_lawyer_notes_lawyer_id on lawyer_notes(lawyer_id);
+
 -- Enable Row Level Security (RLS) on all tables for production data protection
 alter table profiles enable row level security;
 alter table lawyers enable row level security;
@@ -239,6 +312,15 @@ create policy "Users can insert own profile" on profiles
 
 create policy "Users can update own profile" on profiles
   for update using (auth.uid() = id);
+
+-- Lawyer profiles are public professional info, needed for the directory listing
+create policy "profiles_select_public_for_lawyers" on profiles
+for select using (
+  exists (
+    select 1 from lawyers l
+    where l.profile_id = profiles.id
+  )
+);
 
 -- lawyers policies
 create policy "Anyone can select lawyers" on lawyers
@@ -446,6 +528,7 @@ grant usage on schema public to anon, authenticated;
 grant select on lawyers to anon;
 grant select on reviews to anon;
 grant select on legal_knowledge_base to anon;
+grant select on profiles to anon;
 
 grant select on profiles to authenticated;
 grant insert, update on profiles to authenticated;
@@ -462,8 +545,56 @@ grant select, insert, update on profile_facts to authenticated;
 grant select, insert on direct_messages to authenticated;
 grant select, insert, update, delete on case_deadlines to authenticated;
 grant select, insert on generated_documents to authenticated;
+grant select, insert, update on case_summaries to authenticated;
+grant select, insert, update on lawyer_notes to authenticated;
 
 -- whatsapp_sessions and analytics_events are written only via the service role;
 -- neither anon nor authenticated receives any grant on them.
+
+-- case_summaries policies
+create policy "Case summaries select citizen" on case_summaries
+  for select using (
+    exists (select 1 from cases where cases.id = case_summaries.case_id and cases.citizen_id = auth.uid())
+  );
+
+create policy "Case summaries select lawyer" on case_summaries
+  for select using (
+    exists (
+      select 1 from lawyer_connections lc
+      join lawyers l on l.id = lc.lawyer_id
+      where lc.case_id = case_summaries.case_id and l.profile_id = auth.uid() and lc.status = 'accepted'
+    )
+  );
+
+create policy "Case summaries insert" on case_summaries
+  for insert with check (
+    exists (select 1 from cases where cases.id = case_summaries.case_id and cases.citizen_id = auth.uid())
+  );
+
+create policy "Case summaries update" on case_summaries
+  for update using (
+    exists (select 1 from cases where cases.id = case_summaries.case_id and cases.citizen_id = auth.uid())
+  );
+
+-- lawyer_notes policies
+create policy "Lawyer notes select lawyer" on lawyer_notes
+  for select using (
+    exists (select 1 from lawyers l where l.id = lawyer_notes.lawyer_id and l.profile_id = auth.uid())
+  );
+
+create policy "Lawyer notes insert lawyer" on lawyer_notes
+  for insert with check (
+    exists (select 1 from lawyers l where l.id = lawyer_notes.lawyer_id and l.profile_id = auth.uid())
+  );
+
+create policy "Lawyer notes update lawyer" on lawyer_notes
+  for update using (
+    exists (select 1 from lawyers l where l.id = lawyer_notes.lawyer_id and l.profile_id = auth.uid())
+  );
+
+create policy "Lawyer notes select citizen" on lawyer_notes
+  for select using (
+    exists (select 1 from cases where cases.id = lawyer_notes.case_id and cases.citizen_id = auth.uid())
+  );
 
 

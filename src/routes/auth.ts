@@ -105,6 +105,7 @@ export function registerAuthRoutes(app: express.Express, ctx: ServerContext): vo
         const parsedExp = parseInt(years_experience, 10);
         const lawyerPayload = {
           profile_id: userId,
+          is_seed: false,
           specialty: Array.isArray(specialty)
             ? specialty
             : specialty
@@ -112,16 +113,20 @@ export function registerAuthRoutes(app: express.Express, ctx: ServerContext): vo
             : ["General Legal Practice"],
           years_experience: isNaN(parsedExp) ? 5 : parsedExp,
           bar_council_number: bar_council_number ? String(bar_council_number).trim() : "",
+          bar_council_state: state_bar ? String(state_bar).trim() : state || "India",
+          verification_status: "verified",
+          verified_at: new Date().toISOString(),
           is_verified: true,
           bio: bio
             ? String(bio)
             : `Advocate enrolled with ${state_bar || "State Bar Association"}. Court Practice: ${court_jurisdiction || "District & High Courts"}. State: ${state || "India"}`,
           consultation_fee_range: consultation_fee_range
             ? String(consultation_fee_range)
-            : "₹1000 Consultation Fee",
+            : "₹1,000 - ₹2,000 / session",
           rating_avg: 5.0,
           total_cases_handled: 0,
           available: true,
+          profile_photo_url: null,
           updated_at: new Date().toISOString(),
         };
 

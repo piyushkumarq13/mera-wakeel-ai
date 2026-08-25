@@ -1,5 +1,5 @@
-export type PreferredLanguage = 'hindi' | 'english' | 'hinglish' | 'tamil' | 'telugu' | 'marathi' | 'bengali' | 'kannada' | 'gujarati';
-export type UserType = 'citizen' | 'lawyer';
+export type PreferredLanguage = 'hindi' | 'english' | 'hinglish' | 'tamil' | 'telugu' | 'marathi' | 'bengali' | 'kannada' | 'gujarati' | 'malayalam' | 'punjabi' | 'odia' | 'urdu';
+export type UserType = 'citizen' | 'lawyer' | 'admin';
 export type CaseCategory = 'property' | 'tenant' | 'family' | 'consumer' | 'labour' | 'other';
 export type CaseStatus = 'ongoing' | 'assessed' | 'closed' | 'resolved' | 'lawyer_connected';
 export type AIVerdict = 'user_correct' | 'user_incorrect' | 'needs_more_info';
@@ -10,6 +10,8 @@ export type EvidencePriority = 'critical' | 'helpful' | 'optional';
 export type ConnectionStatus = 'requested' | 'accepted' | 'rejected' | 'completed';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 export type DeadlineType = 'hearing' | 'filing' | 'response';
+export type ReportStatus = 'DRAFT' | 'AI_GENERATING' | 'READY' | 'REQUEST_SENT' | 'LAWYER_VIEWED_BRIEF' | 'ACCEPTED' | 'DECLINED' | 'FULL_REPORT_UNLOCKED' | 'UPDATED';
+export type LawyerRequestStatus = 'none' | 'pending' | 'accepted' | 'declined';
 
 export interface Profile {
   id: string; // references auth.users(id)
@@ -26,6 +28,7 @@ export interface Profile {
 export interface Lawyer {
   id: string;
   profile_id: string;
+  is_seed?: boolean;
   specialty: string[];
   years_experience: number;
   bar_council_number: string | null;
@@ -59,6 +62,7 @@ export interface Case {
   ai_summary: string | null;
   confidence_score: number | null;
   assigned_lawyer_id: string | null;
+  citizen_note?: string | null;
   created_at?: string;
   updated_at?: string;
 
@@ -104,6 +108,7 @@ export interface LawyerConnection {
   citizen_id: string;
   lawyer_id: string;
   status: ConnectionStatus;
+  request_note?: string | null;
   requested_at?: string;
 
   // Joined fields
@@ -184,4 +189,76 @@ export interface TrustStats {
   resolved_cases: number;
   verified_lawyers: number;
   avg_rating: number;
+}
+
+export interface CaseSummary {
+  id: string;
+  case_id: string;
+  version: number;
+
+  case_title: string | null;
+  case_category: string | null;
+  case_sub_category: string | null;
+  incident_date: string | null;
+  location: string | null;
+
+  complainant_name: string | null;
+  complainant_role: string | null;
+  complainant_details: string | null;
+  opposite_party_name: string | null;
+  opposite_party_role: string | null;
+  opposite_party_details: string | null;
+  relationship_between_parties: string | null;
+
+  executive_summary: string | null;
+  key_facts: string[];
+  disputed_facts: string[];
+
+  documents_list: string[];
+  evidence_list: string[];
+  witnesses: string[];
+
+  applicable_laws: Array<{ law: string; section: string; relevance: string; citation?: string }>;
+  legal_questions: string[];
+  ai_analysis: string | null;
+  ai_reasoning: string | null;
+
+  case_strength_score: number | null;
+  score_reasoning: string | null;
+  positive_factors: string[];
+  uncertain_factors: string[];
+
+  actions_already_taken: string[];
+  recommended_next_steps: string[];
+  case_timeline: Array<{ date: string; event: string; source?: string }>;
+
+  missing_information: string[];
+  questions_for_lawyer: string[];
+
+  report_id: string | null;
+  report_status: ReportStatus;
+  short_brief: string | null;
+
+  assigned_lawyer_id: string | null;
+  assigned_lawyer_name: string | null;
+  lawyer_accepted_at: string | null;
+  lawyer_request_status: LawyerRequestStatus;
+
+  ai_generated_at: string | null;
+  ai_last_updated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LawyerNote {
+  id: string;
+  case_id: string;
+  lawyer_id: string;
+  notes: string | null;
+  legal_strategy: string | null;
+  client_instructions: string | null;
+  next_hearing: string | null;
+  follow_up_date: string | null;
+  created_at: string;
+  updated_at: string;
 }

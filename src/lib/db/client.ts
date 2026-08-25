@@ -1,7 +1,19 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+function getEnvVar(key: string): string {
+  // Vite client-side
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+    return (import.meta as any).env[key] || '';
+  }
+  // Node.js server-side
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key] || '';
+  }
+  return '';
+}
+
+const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || getEnvVar('SUPABASE_URL');
+const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || getEnvVar('SUPABASE_ANON_KEY');
 
 let clientInstance: SupabaseClient | null = null;
 

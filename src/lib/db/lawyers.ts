@@ -1,10 +1,12 @@
 import { Lawyer, LawyerConnection, ConnectionStatus, Review } from '../../types/database';
 import { getSupabase, generateUUID, isValidUUID, toValidUUID, resolveValidProfileId, resolveValidLawyerId, resolveValidCaseId } from './client';
 import { updateCaseStatus } from './cases';
+import { normalizeConnectionStatus, dedupeConnections } from './status';
+import { getAuthHeaders } from './authClient';
 
 export async function createLawyerEntry(profileId: string, extraData?: Partial<Lawyer>): Promise<Lawyer | null> {
   const mockLawyer: Lawyer = {
-    id: generateUUID(),
+    id: profileId,
     profile_id: profileId,
     specialty: extraData?.specialty || ['General Legal Practice'],
     years_experience: extraData?.years_experience || 1,
@@ -12,7 +14,7 @@ export async function createLawyerEntry(profileId: string, extraData?: Partial<L
     bar_council_state: extraData?.bar_council_state || null,
     verification_status: 'pending',
     verified_at: null,
-    is_verified: true,
+    is_verified: false,
     bio: extraData?.bio || 'Advocate registered on Mera Wakeel AI',
     consultation_fee_range: extraData?.consultation_fee_range || '₹1000 - ₹2000',
     rating_avg: 5.0,
@@ -24,7 +26,7 @@ export async function createLawyerEntry(profileId: string, extraData?: Partial<L
   try {
     const res = await fetch('/api/db/lawyers/update', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         userId: profileId,
         specialty: extraData?.specialty,
@@ -50,18 +52,19 @@ export async function createLawyerEntry(profileId: string, extraData?: Partial<L
     const { data, error } = await client
       .from('lawyers')
       .upsert({
+        id: profileId,
         profile_id: profileId,
         specialty: extraData?.specialty || ['General Legal Practice'],
         years_experience: extraData?.years_experience || 1,
         bar_council_number: extraData?.bar_council_number || '',
-        is_verified: true,
+        is_verified: false,
         bio: extraData?.bio || 'Advocate registered on Mera Wakeel AI',
         consultation_fee_range: extraData?.consultation_fee_range || '₹1000 - ₹2000',
         rating_avg: 5.0,
         total_cases_handled: 0,
         available: true,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'profile_id' })
+      }, { onConflict: 'id' })
       .select('*')
       .single();
 
@@ -165,7 +168,7 @@ export async function upsertLawyerProfile(
     bar_council_state: lawyerData.bar_council_state || null,
     verification_status: 'pending',
     verified_at: null,
-    is_verified: true,
+    is_verified: false,
     bio: lawyerData.bio,
     consultation_fee_range: lawyerData.consultation_fee_range,
     rating_avg: 4.8,
@@ -179,7 +182,7 @@ export async function upsertLawyerProfile(
   try {
     const res = await fetch('/api/db/lawyers/update', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         userId,
         profile_photo_url: lawyerData.profile_photo_url,
@@ -233,7 +236,7 @@ export async function upsertLawyerProfile(
           bio: lawyerData.bio,
           consultation_fee_range: lawyerData.consultation_fee_range,
           profile_photo_url: lawyerData.profile_photo_url,
-          is_verified: true,
+          is_verified: false,
           updated_at: nowIso,
         })
         .select('*, profile:profiles(*)')
@@ -252,8 +255,9 @@ export async function upsertLawyerProfile(
 
 const SEED_LAWYERS: Lawyer[] = [
   {
-    id: 'lawyer_rajesh_sharma',
-    profile_id: 'prof_rajesh',
+    id: '11111111-1111-4111-8111-111111111111',
+    profile_id: '11111111-1111-4111-8111-111111111111',
+    is_seed: true,
     specialty: ['Property Law', 'Civil Litigation', 'Consumer Law'],
     years_experience: 14,
     bar_council_number: 'D/2048/2010',
@@ -268,7 +272,7 @@ const SEED_LAWYERS: Lawyer[] = [
     available: true,
     profile_photo_url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     profile: {
-      id: 'prof_rajesh',
+      id: '11111111-1111-4111-8111-111111111111',
       full_name: 'Adv. Rajesh Sharma',
       phone: '+91 9876543210',
       user_type: 'lawyer',
@@ -278,8 +282,9 @@ const SEED_LAWYERS: Lawyer[] = [
     },
   },
   {
-    id: 'lawyer_priya_deshmukh',
-    profile_id: 'prof_priya',
+    id: '22222222-2222-4222-8222-222222222222',
+    profile_id: '22222222-2222-4222-8222-222222222222',
+    is_seed: true,
     specialty: ['Family Law', 'Property Law', 'Consumer Law'],
     years_experience: 11,
     bar_council_number: 'MAH/1129/2013',
@@ -294,7 +299,7 @@ const SEED_LAWYERS: Lawyer[] = [
     available: true,
     profile_photo_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
     profile: {
-      id: 'prof_priya',
+      id: '22222222-2222-4222-8222-222222222222',
       full_name: 'Adv. Priya Deshmukh',
       phone: '+91 9811223344',
       user_type: 'lawyer',
@@ -304,8 +309,9 @@ const SEED_LAWYERS: Lawyer[] = [
     },
   },
   {
-    id: 'lawyer_amit_verma',
-    profile_id: 'prof_amit',
+    id: '33333333-3333-4333-8333-333333333333',
+    profile_id: '33333333-3333-4333-8333-333333333333',
+    is_seed: true,
     specialty: ['Labour Law', 'Consumer Law', 'Corporate Law'],
     years_experience: 9,
     bar_council_number: 'KAR/3021/2015',
@@ -320,7 +326,7 @@ const SEED_LAWYERS: Lawyer[] = [
     available: true,
     profile_photo_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
     profile: {
-      id: 'prof_amit',
+      id: '33333333-3333-4333-8333-333333333333',
       full_name: 'Adv. Amit Verma',
       phone: '+91 9900112233',
       user_type: 'lawyer',
@@ -330,8 +336,9 @@ const SEED_LAWYERS: Lawyer[] = [
     },
   },
   {
-    id: 'lawyer_sanjay_gupta',
-    profile_id: 'prof_sanjay',
+    id: '44444444-4444-4444-8444-444444444444',
+    profile_id: '44444444-4444-4444-8444-444444444444',
+    is_seed: true,
     specialty: ['Criminal Law', 'Property Law', 'Consumer Law'],
     years_experience: 18,
     bar_council_number: 'UP/8841/2006',
@@ -346,7 +353,7 @@ const SEED_LAWYERS: Lawyer[] = [
     available: true,
     profile_photo_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
     profile: {
-      id: 'prof_sanjay',
+      id: '44444444-4444-4444-8444-444444444444',
       full_name: 'Adv. Sanjay Gupta',
       phone: '+91 9711223344',
       user_type: 'lawyer',
@@ -379,9 +386,7 @@ export async function fetchLawyersDirectory(): Promise<Lawyer[]> {
         .order('rating_avg', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        if (data.some((l: any) => l.profile?.full_name)) {
-          return data as Lawyer[];
-        }
+        return data as Lawyer[];
       }
     } catch (err) {
       console.warn('fetchLawyersDirectory client notice:', err);
@@ -421,11 +426,17 @@ export async function fetchLawyerById(lawyerId: string): Promise<Lawyer | null> 
   return found || null;
 }
 
+export interface LawConnectionResult {
+  connection: LawyerConnection;
+  sms_sent: boolean;
+}
+
 export async function createLawyerConnection(
   citizenId: string,
   lawyerId: string,
-  caseId: string
-): Promise<LawyerConnection> {
+  caseId: string,
+  requestNote?: string
+): Promise<LawConnectionResult> {
   const dbCitizenId = toValidUUID(citizenId);
   const dbLawyerId = toValidUUID(lawyerId);
   const dbCaseId = toValidUUID(caseId);
@@ -437,24 +448,33 @@ export async function createLawyerConnection(
     citizen_id: dbCitizenId,
     lawyer_id: dbLawyerId,
     status: 'requested',
+    request_note: requestNote || null,
     requested_at: new Date().toISOString(),
   };
 
   try {
     const res = await fetch('/api/db/connections/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         citizen_id: citizenId,
         lawyer_id: lawyerId,
         case_id: caseId,
+        request_note: requestNote || null,
       }),
     });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.connection) return json.connection;
+    const json = await res.json().catch(() => null);
+    if (json && json.success && json.connection) return { connection: json.connection, sms_sent: Boolean(json.sms_sent) };
+    if (json && json.success === false && json.error) {
+      const errMsg = String(json.error);
+      if (errMsg === 'ALREADY_REQUESTED' || errMsg.includes('ALREADY_REQUESTED')) {
+        throw new Error('ALREADY_REQUESTED');
+      }
     }
   } catch (err) {
+    if (err instanceof Error && err.message === 'ALREADY_REQUESTED') {
+      throw err;
+    }
     console.warn('createLawyerConnection proxy notice:', err);
   }
 
@@ -465,36 +485,55 @@ export async function createLawyerConnection(
       const validLawyerId = await resolveValidLawyerId(client, lawyerId);
       const validCaseId = await resolveValidCaseId(client, caseId, validCitizenId);
 
-      const { data, error } = await client
+      const { data: existingConn } = await client
         .from('lawyer_connections')
-        .upsert(
-          {
-            id: connectionId,
-            case_id: validCaseId,
-            citizen_id: validCitizenId,
-            lawyer_id: validLawyerId,
-            status: 'requested',
-            requested_at: newConn.requested_at,
-          },
-          { onConflict: 'id' }
-        )
+        .select('id')
+        .eq('citizen_id', validCitizenId)
+        .eq('lawyer_id', validLawyerId)
+        .eq('status', 'requested')
+        .maybeSingle();
+
+      if (existingConn) {
+        throw new Error('ALREADY_REQUESTED');
+      }
+
+      const upsertPayload: Record<string, any> = {
+        id: connectionId,
+        case_id: validCaseId,
+        citizen_id: validCitizenId,
+        lawyer_id: validLawyerId,
+        status: 'requested',
+        requested_at: newConn.requested_at,
+      };
+      if (requestNote) upsertPayload.request_note = requestNote;
+
+      let { data, error } = await client
+        .from('lawyer_connections')
+        .upsert(upsertPayload, { onConflict: 'id' })
         .select('*')
         .maybeSingle();
 
+      if (error && requestNote && (error.message?.includes('request_note') || error.message?.includes('column') || (error as any).code === '42703')) {
+        delete upsertPayload.request_note;
+        const retry = await client.from('lawyer_connections').upsert(upsertPayload, { onConflict: 'id' }).select('*').maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      }
+
       if (!error && data) {
-        return data as LawyerConnection;
+        return { connection: data as LawyerConnection, sms_sent: false };
       }
     } catch (err) {
       console.error('createLawyerConnection exception:', err);
     }
   }
 
-  return newConn;
+  return { connection: newConn, sms_sent: false };
 }
 
 export async function fetchLawyerConnectionsForLawyer(lawyerId: string): Promise<LawyerConnection[]> {
   try {
-    const res = await fetch(`/api/db/connections?lawyerId=${encodeURIComponent(lawyerId)}`);
+    const res = await fetch(`/api/db/connections?lawyerId=${encodeURIComponent(lawyerId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.connections)) {
@@ -531,7 +570,7 @@ export async function fetchLawyerConnectionsForLawyer(lawyerId: string): Promise
         .order('requested_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        return data as LawyerConnection[];
+        return dedupeConnections(data as LawyerConnection[]);
       }
     } catch (err) {
       console.warn('fetchLawyerConnectionsForLawyer client error:', err);
@@ -546,31 +585,38 @@ export async function updateConnectionStatus(
   caseId: string,
   lawyerId: string,
   citizenId: string,
-  status: ConnectionStatus
+  status: ConnectionStatus,
+  declineReason?: string
 ): Promise<void> {
-  const dbStatus = (status as string) === 'declined' ? 'rejected' : status;
+  const dbStatus = normalizeConnectionStatus(status);
+  let serverSucceeded = false;
 
   try {
-    await fetch('/api/db/connections/status', {
+    const res = await fetch('/api/db/connections/status', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         connectionId,
         caseId,
         lawyerId,
         citizenId,
         status: dbStatus,
+        decline_reason: declineReason || null,
       }),
     });
+    if (res.ok) {
+      serverSucceeded = true;
+    }
   } catch (err) {
     console.warn('updateConnectionStatus proxy notice:', err);
   }
 
-  if (status === 'accepted') {
+  if (dbStatus === 'accepted') {
     await updateCaseStatus(caseId, citizenId, 'lawyer_connected');
   }
 
   const client = getSupabase();
+  let dbSucceeded = false;
   if (client) {
     try {
       const validCitizenId = await resolveValidProfileId(client, citizenId);
@@ -579,19 +625,26 @@ export async function updateConnectionStatus(
 
       const dbConnectionId = toValidUUID(connectionId);
       const targetConnIds = Array.from(new Set([connectionId, dbConnectionId].filter(Boolean)));
+      const updatePayload: any = { status: dbStatus };
+      if (dbStatus === 'rejected' && declineReason) updatePayload.decline_reason = declineReason;
       await client
         .from('lawyer_connections')
-        .update({ status: dbStatus })
+        .update(updatePayload)
         .in('id', targetConnIds);
+      dbSucceeded = true;
     } catch (err) {
       console.warn('updateConnectionStatus db error:', err);
     }
+  }
+
+  if (!serverSucceeded && !dbSucceeded) {
+    throw new Error('Failed to update connection status: both server and database fallback failed');
   }
 }
 
 export async function fetchLawyerConnectionsForCitizen(citizenId: string): Promise<LawyerConnection[]> {
   try {
-    const res = await fetch(`/api/db/connections?citizenId=${encodeURIComponent(citizenId)}`);
+    const res = await fetch(`/api/db/connections?citizenId=${encodeURIComponent(citizenId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.connections)) {
@@ -625,12 +678,12 @@ export async function fetchLawyerConnectionsForCitizen(citizenId: string): Promi
         .order('requested_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        return data.map((conn: any) => {
-          if (conn.status === 'approved' || conn.status === 'lawyer_connected') {
-            conn.status = 'accepted';
-          }
-          return conn as LawyerConnection;
-        });
+        return dedupeConnections(
+          data.map((conn: any) => {
+            conn.status = normalizeConnectionStatus(conn.status);
+            return conn as LawyerConnection;
+          })
+        );
       }
     } catch (err) {
       console.warn('fetchLawyerConnectionsForCitizen client error:', err);
@@ -646,14 +699,19 @@ export interface DirectMessage {
   sender_id: string;
   sender_type: 'lawyer' | 'citizen';
   content: string;
+  attachment_url?: string;
+  attachment_type?: string;
+  attachment_name?: string;
   sent_at: string;
+  is_read?: boolean;
 }
 
 export async function sendDirectMessage(
   connectionId: string,
   senderId: string,
   senderType: 'lawyer' | 'citizen',
-  content: string
+  content: string,
+  attachment?: { url: string; type: string; name: string }
 ): Promise<DirectMessage> {
   const dbConnectionId = toValidUUID(connectionId);
   const msgId = generateUUID();
@@ -662,19 +720,25 @@ export async function sendDirectMessage(
     connection_id: connectionId,
     sender_id: senderId,
     sender_type: senderType,
-    content: content.trim(),
+    content: content ? content.trim() : '',
+    attachment_url: attachment?.url,
+    attachment_type: attachment?.type,
+    attachment_name: attachment?.name,
     sent_at: new Date().toISOString(),
   };
 
   try {
     const res = await fetch('/api/db/direct-messages/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         connection_id: connectionId,
         sender_id: senderId,
         sender_type: senderType,
-        content: content.trim(),
+        content: content ? content.trim() : '',
+        attachment_url: attachment?.url || null,
+        attachment_type: attachment?.type || null,
+        attachment_name: attachment?.name || null,
       }),
     });
     if (res.ok) {
@@ -693,7 +757,10 @@ export async function sendDirectMessage(
         connection_id: dbConnectionId,
         sender_id: senderId,
         sender_type: senderType,
-        content: msg.content,
+        content: msg.content || null,
+        attachment_url: attachment?.url || null,
+        attachment_type: attachment?.type || null,
+        attachment_name: attachment?.name || null,
         sent_at: msg.sent_at,
       });
     } catch (err) {
@@ -725,7 +792,7 @@ export async function fetchDirectMessages(connectionId: string): Promise<DirectM
   }
 
   try {
-    const res = await fetch(`/api/db/direct-messages?connectionId=${encodeURIComponent(connectionId)}`);
+    const res = await fetch(`/api/db/direct-messages?connectionId=${encodeURIComponent(connectionId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.messages)) {
@@ -737,6 +804,25 @@ export async function fetchDirectMessages(connectionId: string): Promise<DirectM
   }
 
   return [];
+}
+
+export async function markMessagesAsRead(connectionId: string, readerType: 'lawyer' | 'citizen'): Promise<void> {
+  const client = getSupabase();
+  const dbConnectionId = toValidUUID(connectionId);
+
+  if (client) {
+    try {
+      const senderTypeToExclude = readerType === 'citizen' ? 'citizen' : 'lawyer';
+      await client
+        .from('direct_messages')
+        .update({ is_read: true })
+        .in('connection_id', Array.from(new Set([connectionId, dbConnectionId])))
+        .eq('sender_type', readerType === 'citizen' ? 'lawyer' : 'citizen')
+        .eq('is_read', false);
+    } catch (err) {
+      console.warn('markMessagesAsRead client notice:', err);
+    }
+  }
 }
 
 export async function fetchLawyerReviews(lawyerId: string): Promise<Review[]> {
@@ -790,7 +876,7 @@ export async function submitLawyerReview(
   try {
     const res = await fetch('/api/db/reviews/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         lawyer_id: lawyerId,
         citizen_id: citizenId,
@@ -830,4 +916,60 @@ export async function submitLawyerReview(
   }
 
   return newRev;
+}
+
+export async function uploadDirectMessageAttachment(
+  connectionId: string,
+  messageId: string,
+  file: File
+): Promise<string | null> {
+  const client = getSupabase();
+  if (!client) return null;
+
+  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `${connectionId}/${messageId}_${cleanFileName}`;
+
+  try {
+    const { data: buckets } = await client.storage.listBuckets();
+    const bucketExists = buckets?.some((b) => b.name === 'direct-message-attachments');
+    if (!bucketExists) {
+      await client.storage.createBucket('direct-message-attachments', { public: false }).catch(() => {});
+    }
+
+    const { error: uploadErr } = await client.storage
+      .from('direct-message-attachments')
+      .upload(storagePath, file, {
+        upsert: true,
+        contentType: file.type || 'application/octet-stream',
+      });
+
+    if (uploadErr) {
+      console.warn('DM attachment upload error:', uploadErr);
+      return null;
+    }
+
+    return storagePath;
+  } catch (err) {
+    console.warn('uploadDirectMessageAttachment error:', err);
+    return null;
+  }
+}
+
+export async function getSignedUrlForAttachment(storagePath: string): Promise<string | null> {
+  const client = getSupabase();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.storage
+      .from('direct-message-attachments')
+      .createSignedUrl(storagePath, 3600);
+    if (error || !data?.signedUrl) {
+      console.warn('createSignedUrl error:', error);
+      return null;
+    }
+    return data.signedUrl;
+  } catch (err) {
+    console.warn('getSignedUrlForAttachment error:', err);
+    return null;
+  }
 }

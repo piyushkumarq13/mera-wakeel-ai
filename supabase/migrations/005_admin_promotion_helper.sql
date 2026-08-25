@@ -1,0 +1,21 @@
+-- Admin Promotion Helper Migration
+-- =============================================
+-- The profiles table has a CHECK constraint on user_type that only allows 'citizen' or 'lawyer'.
+-- To promote a user to admin, you must first update the CHECK constraint, then update the row.
+-- NEVER automate this or expose it via the app UI. Admin promotion must be deliberate and manual.
+-- =============================================
+--
+-- STEP 1: Update the CHECK constraint to allow 'admin' as a valid user_type value.
+-- Run this FIRST in the Supabase SQL Editor:
+--
+-- ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_user_type_check;
+-- ALTER TABLE profiles ADD CONSTRAINT profiles_user_type_check CHECK (user_type IN ('citizen', 'lawyer', 'admin'));
+--
+-- STEP 2: Promote a specific user to admin by email.
+-- Run this AFTER Step 1 in the Supabase SQL Editor:
+--
+-- UPDATE profiles SET user_type = 'admin' WHERE email = 'REPLACE_WITH_ADMIN_EMAIL';
+--
+-- After running both steps, the user will need to log out and log back in for the role change to take effect.
+-- The admin dashboard at /admin is gated by currentUser.role === 'admin' in App.tsx,
+-- and the AdminDashboardView also has its own ADMIN_API_KEY password prompt as defense-in-depth.

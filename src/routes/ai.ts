@@ -4,9 +4,48 @@ import { buildLegalSystemPrompt } from "../../legalPersona";
 import { detectLanguageWithStats, languageInstructions as languageInstructionsFor } from "../lib/language";
 import { buildCitationContext } from "../lib/legalCitations";
 import { buildGovernmentAidContextBlock } from "../lib/govSchemes";
+import { rankLawyersForCase, inferMatchCategory } from "../lib/db/lawyerMatch";
 
 export function registerAiRoutes(app: express.Express, ctx: ServerContext): void {
   const { supabaseAdmin, geminiApiKey, geminiGenerateContent } = ctx;
+
+  async function buildLawyerRecommendationBlock(caseText: string, category: string, excludedLawyerIds: string[] = []): Promise<string> {
+    try {
+      if (!supabaseAdmin) return '';
+      const { data: lawyers } = await supabaseAdmin
+        .from('lawyers')
+        .select('*, profile:profiles(*)')
+        .order('rating_avg', { ascending: false })
+        .limit(30);
+      const rows = (lawyers || []) as any[];
+      if (!rows.length) return '';
+
+      const suggestions = rankLawyersForCase(rows as any, {
+        category,
+        text: caseText,
+        excludedLawyerIds,
+      });
+      const top = suggestions.slice(0, 5);
+      const lines = top.map((s, i) => {
+        const l = s.lawyer as any;
+        const name = l.profile?.full_name || 'Advocate';
+        const fee = l.consultation_fee_range || '₹1,000 - ₹2,000 / session';
+        const city = l.profile?.city || '—';
+        const exp = l.years_experience ? `${l.years_experience} yrs` : 'Experienced';
+        const rating = l.rating_avg ? `★${Number(l.rating_avg).toFixed(1)}` : '';
+        return `${i + 1}. Adv. ${name} (${(l.specialty || ['General']).join(', ')} | ${exp} | ${rating} | City: ${city} | Fee: ${fee})`;
+      });
+
+      return (
+        'AVAILABLE VERIFIED ADVOCATES ON MERA WAKEEL AI (ranked best for THIS specific case, best match first):\n' +
+        lines.join('\n') +
+        '\n\nRULE: When recommending a lawyer, ONLY recommend advocates from this exact list by their full name, in this ranked order, never repeating an advocate already handling this case. If the user asks for more options, recommend the next advocates from the list. Do not invent advocates outside this list.'
+      );
+    } catch (err: any) {
+      console.warn('[MERA-FIX] lawyer recommendation block error:', err?.message || err);
+      return '';
+    }
+  }
 
   app.post("/api/groq/transcribe", async (req, res) => {
     const groqKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
@@ -225,6 +264,21 @@ export function registerAiRoutes(app: express.Express, ctx: ServerContext): void
 
       if (ragContext && typeof ragContext === "string" && ragContext.trim()) {
         systemPrompt += `\n\n${ragContext.trim()}`;
+      }
+
+      // Feed the AI real, per-case-ranked advocates so it recommends actual
+      // lawyers best suited to THIS matter instead of generic advice.
+      try {
+        const lastAssistant = Array.isArray(history)
+          ? [...history].reverse().find((h: any) => h.role === "assistant")?.content || ""
+          : "";
+        const caseText = `${prompt || ""} ${lastAssistant || ""}`.trim();
+        const caseCategory = String(req.body?.caseCategory || req.body?.category || "") || inferMatchCategory(caseText);
+        const excludedLawyerIds = Array.isArray(req.body?.excludedLawyerIds) ? req.body.excludedLawyerIds : [];
+        const lawyerBlock = await buildLawyerRecommendationBlock(caseText, caseCategory, excludedLawyerIds);
+        if (lawyerBlock) systemPrompt += `\n\n${lawyerBlock}`;
+      } catch (_e) {
+        // keep system prompt as-is on any lawyer-lookup failure
       }
 
       if (file && file.data) {

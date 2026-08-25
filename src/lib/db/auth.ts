@@ -1,12 +1,13 @@
 import { Profile } from '../../types/database';
 import { getSupabase, isValidUUID, toValidUUID } from './client';
+import { getAuthHeaders } from './authClient';
 
 export interface DisplayNameInput {
   profile?: Pick<Profile, 'full_name' | 'phone'> | null;
   metadata?: Record<string, any> | null;
   email?: string | null;
   phone?: string | null;
-  role?: 'citizen' | 'lawyer';
+  role?: 'citizen' | 'lawyer' | 'admin';
 }
 
 function looksLikePlaceholder(name: string): boolean {
@@ -60,7 +61,9 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   if (!userId) return null;
 
   try {
-    const res = await fetch(`/api/db/profile?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`/api/db/profile?userId=${encodeURIComponent(userId)}`, {
+      headers: await getAuthHeaders(),
+    });
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.profile) {
@@ -115,7 +118,7 @@ export async function createOrUpdateProfile(profileData: Partial<Profile> & { id
   try {
     const res = await fetch('/api/db/profile/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify(formattedProfile),
     });
     if (res.ok) {

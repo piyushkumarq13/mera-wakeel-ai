@@ -34,7 +34,7 @@ interface ChatSidebarProps {
   rememberedCaseFacts: CaseFact[];
   rememberedProfileFacts: ProfileFact[];
   recommendedLawyers: Lawyer[];
-  acceptedConnection: LawyerConnection | null;
+  acceptedConnection?: LawyerConnection | null;
   pendingConnection: LawyerConnection | null;
   categoryMatchedLawyers: Lawyer[];
   allocatedLawyerIndex: number;
@@ -44,7 +44,7 @@ interface ChatSidebarProps {
   lawyerConnectNotice: string;
   onQuickConnectLawyer: (lawyer: Lawyer) => void;
   onDeclineAndShowNextLawyer: () => void;
-  onOpenDirectChat: () => void;
+  onOpenDirectChat?: () => void;
   caseStatus: CaseStatus;
   onToggleCaseStatus: () => void;
   onFindLawyer?: (category?: string) => void;
@@ -429,8 +429,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 );
               }
 
-              const list = categoryMatchedLawyers.length > 0 ? categoryMatchedLawyers : recommendedLawyers;
+              const list = recommendedLawyers.length > 0 ? recommendedLawyers : categoryMatchedLawyers;
               const currentLawyer = list[allocatedLawyerIndex % list.length] || list[0];
+              const rank = list.indexOf(currentLawyer) + 1;
               const isConnected = connectedLawyerIds.includes(currentLawyer.id);
               const isConnecting = connectingLawyerId === currentLawyer.id;
 
@@ -441,9 +442,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                       {currentLawyer.profile?.full_name?.charAt(0) || 'A'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-extrabold text-xs text-[#0F1D38] truncate">
-                        Adv. {currentLawyer.profile?.full_name || 'Advocate'}
-                      </h4>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="font-extrabold text-xs text-[#0F1D38] truncate">
+                          Adv. {currentLawyer.profile?.full_name || 'Advocate'}
+                        </h4>
+                        <span className={`text-[8px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${rank === 1 ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#E2E8F0] text-[#475569]'}`}>
+                          #{rank}
+                        </span>
+                      </div>
                       <p className="text-[10px] text-[#64748B] truncate">
                         {currentLawyer.specialty?.slice(0, 2).join(', ')} • {currentLawyer.years_experience} Yrs
                       </p>

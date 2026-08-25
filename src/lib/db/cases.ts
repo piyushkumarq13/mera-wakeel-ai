@@ -1,12 +1,13 @@
 import { Case, CaseStatus, CaseEvidence, EvidencePriority, CaseFact, ProfileFact, Document, DocumentType } from '../../types/database';
 import { detectLanguage } from '../language';
 import { getSupabase, generateUUID, isValidUUID, toValidUUID, resolveEffectiveCitizenId, sanitizeCategory, ensureProfileRowExists, ensureCaseRowExists } from './client';
+import { getAuthHeaders } from './authClient';
 
 export async function fetchUserCases(citizenId?: string): Promise<Case[]> {
   const targetId = citizenId || 'guest_citizen';
 
   try {
-    const res = await fetch(`/api/db/cases?citizenId=${encodeURIComponent(targetId)}`);
+    const res = await fetch(`/api/db/cases?citizenId=${encodeURIComponent(targetId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.cases) && json.cases.length > 0) {
@@ -48,25 +49,47 @@ export async function fetchUserCases(citizenId?: string): Promise<Case[]> {
   return [];
 }
 
+export const ACTIVE_CASE_LIMIT = 2;
+
+const ACTIVE_CASE_STATUSES = new Set(['ongoing', 'assessed', 'lawyer_connected']);
+
+function countActiveCases(cases: Case[]): number {
+  return cases.filter((c) => ACTIVE_CASE_STATUSES.has(c.status)).length;
+}
+
 export async function createCase(
   citizenId: string,
   title: string = 'Naya Legal Query',
-  category: any = 'other'
+  category: any = 'other',
+  opts?: { reuseActive?: boolean; citizenNote?: string; skipCapCheck?: boolean }
 ): Promise<Case> {
   const effectiveCitizenId = (await resolveEffectiveCitizenId(citizenId)) || citizenId;
   const dbCitizenId = toValidUUID(effectiveCitizenId);
   const caseId = generateUUID();
   const safeCategory = sanitizeCategory(category);
+  const reuseActive = opts?.reuseActive ?? false;
+  const citizenNote = opts?.citizenNote || null;
+  const skipCapCheck = opts?.skipCapCheck ?? false;
 
+  let existingCases: Case[] = [];
   try {
-    const existingCases = await fetchUserCases(citizenId);
-    const activeCase = existingCases?.find((c) => c.status !== 'closed' && c.status !== 'resolved');
+    existingCases = (await fetchUserCases(citizenId)) || [];
+  } catch (err) {
+    console.warn('fetchUserCases for cap check notice:', err);
+  }
+
+  const activeCount = countActiveCases(existingCases);
+
+  if (reuseActive) {
+    const activeCase = existingCases.find((c) => ACTIVE_CASE_STATUSES.has(c.status));
     if (activeCase) {
       console.log('Active case already exists, reusing active case:', activeCase.id);
       return activeCase;
     }
-  } catch (err) {
-    console.warn('Check active case restriction notice:', err);
+  }
+
+  if (!skipCapCheck && activeCount >= ACTIVE_CASE_LIMIT) {
+    throw new Error('ACTIVE_CASE_LIMIT_REACHED');
   }
 
   const newCase: Case = {
@@ -79,6 +102,7 @@ export async function createCase(
     ai_summary: null,
     confidence_score: 0.5,
     assigned_lawyer_id: null,
+    citizen_note: citizenNote,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -86,13 +110,14 @@ export async function createCase(
   try {
     const res = await fetch('/api/db/cases/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         id: caseId,
         citizen_id: citizenId,
         title,
         category: safeCategory,
         status: 'ongoing',
+        citizen_note: citizenNote,
       }),
     });
     if (res.ok) {
@@ -108,20 +133,30 @@ export async function createCase(
     try {
       const validCitizenId = await ensureProfileRowExists(client, dbCitizenId);
 
-      const { data, error } = await client
+      const insertPayload: any = {
+        id: caseId,
+        citizen_id: validCitizenId,
+        title,
+        category: safeCategory,
+        status: 'ongoing',
+        ai_verdict: 'needs_more_info',
+        ai_summary: null,
+        confidence_score: 0.5,
+      };
+      if (citizenNote) insertPayload.citizen_note = citizenNote;
+
+      let { data, error } = await client
         .from('cases')
-        .insert({
-          id: caseId,
-          citizen_id: validCitizenId,
-          title,
-          category: safeCategory,
-          status: 'ongoing',
-          ai_verdict: 'needs_more_info',
-          ai_summary: null,
-          confidence_score: 0.5,
-        })
+        .insert(insertPayload)
         .select('*')
         .maybeSingle();
+
+      if (error && citizenNote && (error.message?.includes('citizen_note') || error.message?.includes('column') || (error as any).code === '42703')) {
+        delete insertPayload.citizen_note;
+        const retry = await client.from('cases').insert(insertPayload).select('*').maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (!error && data) {
         return data as Case;
@@ -136,7 +171,7 @@ export async function createCase(
 
 export async function fetchCaseMessages(caseId: string): Promise<any[]> {
   try {
-    const res = await fetch(`/api/db/messages?caseId=${encodeURIComponent(caseId)}`);
+    const res = await fetch(`/api/db/messages?caseId=${encodeURIComponent(caseId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.messages)) {
@@ -248,7 +283,7 @@ export async function saveCaseMessage(
 
 export async function fetchCaseById(caseId: string): Promise<Case | null> {
   try {
-    const res = await fetch(`/api/db/cases?caseId=${encodeURIComponent(caseId)}`);
+    const res = await fetch(`/api/db/cases?caseId=${encodeURIComponent(caseId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.cases)) {
@@ -322,7 +357,7 @@ export async function updateCaseStatus(
   try {
     await fetch('/api/db/cases/status', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({ caseId, status }),
     });
   } catch (err) {
@@ -408,7 +443,7 @@ export async function updateCaseVerdictAndSummary(
   try {
     await fetch('/api/db/cases/status', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({
         caseId,
         ai_verdict: verdict,
@@ -462,7 +497,7 @@ export async function fetchCaseEvidence(caseId: string): Promise<CaseEvidence[]>
   }
 
   try {
-    const res = await fetch(`/api/db/evidence?caseId=${encodeURIComponent(caseId)}`);
+    const res = await fetch(`/api/db/evidence?caseId=${encodeURIComponent(caseId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.evidence)) {
@@ -612,7 +647,7 @@ export async function fetchCaseFacts(caseId: string): Promise<CaseFact[]> {
   }
 
   try {
-    const res = await fetch(`/api/db/facts?caseId=${encodeURIComponent(caseId)}`);
+    const res = await fetch(`/api/db/facts?caseId=${encodeURIComponent(caseId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.facts)) {
@@ -650,7 +685,7 @@ export async function fetchProfileFacts(profileId: string): Promise<ProfileFact[
   }
 
   try {
-    const res = await fetch(`/api/db/facts?profileId=${encodeURIComponent(profileId)}`);
+    const res = await fetch(`/api/db/facts?profileId=${encodeURIComponent(profileId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.facts)) {
@@ -915,7 +950,7 @@ export async function uploadCaseDocument(
 
 export async function fetchCaseDocuments(caseId: string): Promise<Document[]> {
   try {
-    const res = await fetch(`/api/db/documents?caseId=${encodeURIComponent(caseId)}`);
+    const res = await fetch(`/api/db/documents?caseId=${encodeURIComponent(caseId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.documents)) {

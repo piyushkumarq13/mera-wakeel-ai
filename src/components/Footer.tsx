@@ -66,10 +66,11 @@ export const Footer: React.FC<FooterProps> = ({ language, onTabChange, onOpenAut
                   </li>
                   <li>
                     <button
-                      onClick={() => onTabChange('help')}
-                      className="hover:text-[#D98800] transition-colors cursor-pointer"
+                      onClick={() => onTabChange('support')}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#F5A623] hover:text-[#D4A017] transition-colors cursor-pointer"
                     >
                       Help Center (सहायता)
+
                     </button>
                   </li>
                 </ul>
@@ -147,10 +148,11 @@ export const Footer: React.FC<FooterProps> = ({ language, onTabChange, onOpenAut
                   </li>
                   <li>
                     <button
-                      onClick={() => onTabChange('help')}
-                      className="hover:text-[#D98800] transition-colors cursor-pointer"
+                      onClick={() => onTabChange('support')}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#F5A623] hover:text-[#D4A017] transition-colors cursor-pointer"
                     >
                       Help Center (सहायता)
+
                     </button>
                   </li>
                 </ul>
@@ -204,10 +206,11 @@ export const Footer: React.FC<FooterProps> = ({ language, onTabChange, onOpenAut
                   </li>
                   <li>
                     <button
-                      onClick={() => onTabChange('help')}
-                      className="hover:text-[#D98800] transition-colors cursor-pointer"
+                      onClick={() => onTabChange('support')}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#F5A623] hover:text-[#D4A017] transition-colors cursor-pointer"
                     >
                       Help Center (सहायता)
+
                     </button>
                   </li>
                 </ul>
@@ -306,7 +309,7 @@ export const Footer: React.FC<FooterProps> = ({ language, onTabChange, onOpenAut
             </button>
             <span>•</span>
             <button
-              onClick={() => onTabChange('help')}
+              onClick={() => onTabChange('support')}
               className="hover:text-[#FFFFFF] transition-colors cursor-pointer"
             >
               Help Center

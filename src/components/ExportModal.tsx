@@ -1,5 +1,7 @@
 import React, { useRef } from 'react';
 import { Share2, Printer, Download, FileText, X, Scale, CheckCircle2, AlertCircle, HelpCircle } from 'lucide-react';
+import { CaseSummary } from '../types/database';
+import { CaseReportPDF } from './caseReport/CaseReportPDF';
 
 export interface ExportCaseData {
   caseId?: string;
@@ -16,15 +18,40 @@ export interface ExportCaseData {
 
 interface ExportModalProps {
   caseData: ExportCaseData;
+  caseSummary?: CaseSummary | null;
   onClose: () => void;
 }
 
-export const ExportModal: React.FC<ExportModalProps> = ({ caseData, onClose }) => {
+export const ExportModal: React.FC<ExportModalProps> = ({ caseData, caseSummary, onClose }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (hasFullReport && caseSummary?.case_id) {
+      // Server-side PDF generation for full report
+      try {
+        const res = await fetch('/api/pdf/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caseId: caseSummary.case_id }),
+        });
+        if (!res.ok) { alert('PDF generation failed.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `MWA-Report-${caseSummary.report_id || caseSummary.case_id.slice(0, 8)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch { alert('PDF generation failed.'); }
+    } else {
+      // Fallback to browser print for basic summary
+      window.print();
+    }
   };
+
+  const hasFullReport = caseSummary && caseSummary.executive_summary && caseSummary.report_status !== 'DRAFT';
 
   const getVerdictBadge = (verdict?: string) => {
     const v = (verdict || '').toLowerCase();
@@ -63,8 +90,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ caseData, onClose }) =
               <FileText className="w-5 h-5 text-[#F5A623]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Export Legal Case Summary PDF</h3>
-              <p className="text-[11px] text-slate-400">Generate official printable case assessment brief</p>
+              <h3 className="text-sm font-bold text-white">{hasFullReport ? 'Full Case Report PDF' : 'Export Legal Case Summary PDF'}</h3>
+              <p className="text-[11px] text-slate-400">{hasFullReport ? 'Professional printable case report' : 'Generate official printable case assessment brief'}</p>
             </div>
           </div>
           <button
@@ -79,8 +106,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ caseData, onClose }) =
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
 
           {/* PRINT CONTENT CONTAINER */}
-          <div ref={printRef} className="print-container bg-white text-slate-900 p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
-            
+          {hasFullReport ? (
+            <div ref={printRef} className="print-container">
+              <CaseReportPDF summary={caseSummary} />
+            </div>
+          ) : (
+            <>
             {/* Report Header */}
             <div className="border-b-2 border-[#0F172A] pb-4 flex items-center justify-between">
               <div>
@@ -175,13 +206,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ caseData, onClose }) =
             <div className="border-t border-slate-200 pt-3 text-[10px] text-slate-400 italic text-center">
               Disclaimer: This AI-generated legal briefing is for preliminary evaluation purposes only and does not constitute a formal legal opinion. Please consult an Advocate registered with the Bar Council of India for representation.
             </div>
-          </div>
+            </>
+          )}
 
         </div>
 
         {/* Modal Actions */}
         <div className="p-4 bg-[#070D18] border-t border-[#1E2E4F] flex items-center justify-between">
-          <p className="text-xs text-slate-400">Ready to save or print case PDF</p>
+          <p className="text-xs text-slate-400">{hasFullReport ? 'Download your professional case report' : 'Ready to save or print case PDF'}</p>
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
@@ -194,7 +226,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ caseData, onClose }) =
               className="px-5 py-2.5 text-xs font-bold bg-[#F5A623] hover:bg-[#D98800] text-slate-950 rounded-xl flex items-center gap-2 shadow-lg transition-all"
             >
               <Printer className="w-4 h-4" />
-              <span>Print / Download PDF</span>
+              <span>{hasFullReport ? 'Print / Download Report' : 'Print / Download PDF'}</span>
             </button>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import express from "express";
 import type { ServerContext } from "./context";
+import { requireAdmin } from "./authMiddleware";
 
 export function registerAnalyticsRoutes(app: express.Express, ctx: ServerContext): void {
   const { supabaseAdmin, trackAnalyticsEvent } = ctx;
@@ -15,14 +16,8 @@ export function registerAnalyticsRoutes(app: express.Express, ctx: ServerContext
     }
   });
 
-  app.get("/api/analytics/summary", async (req, res) => {
+  app.get("/api/analytics/summary", requireAdmin, async (req, res) => {
     try {
-      const adminKey = process.env.ADMIN_API_KEY;
-      const presented = req.headers["x-admin-key"] || req.headers["authorization"];
-      const presentedKey = Array.isArray(presented) ? presented[0] : (String(presented || "").replace(/^Bearer\s+/i, ""));
-      if (!adminKey || String(presentedKey) !== String(adminKey)) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
       if (!supabaseAdmin) return res.json({ success: true, events: [], summary: [] });
       const { data, error } = await supabaseAdmin
         .from("analytics_events")

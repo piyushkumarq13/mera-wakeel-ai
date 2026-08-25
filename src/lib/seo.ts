@@ -98,10 +98,20 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     description: 'Admin analytics, pending lawyer verifications aur moderation dashboard.',
     path: '/admin',
   },
-  help: {
-    title: 'Help Center — Mera Wakeel AI',
-    description: 'Mera Wakeel AI kaise use karein — FAQ, tips aur support contact details.',
-    path: '/help',
+  support: {
+    title: 'Help & Support — Mera Wakeel AI',
+    description: 'Submit, track aur manage karein apne support tickets. Admin reply dekhein aur apni history check karein.',
+    path: '/support',
+  },
+  'knowledge-base': {
+    title: 'Knowledge Base — Mera Wakeel AI',
+    description: 'Legal topics, guides aur resources ki complete knowledge base.',
+    path: '/knowledge-base',
+  },
+  register: {
+    title: 'Register — Mera Wakeel AI',
+    description: 'Free account banayein apne legal cases aur consultations ke liye.',
+    path: '/register',
   },
 };
 
@@ -129,7 +139,7 @@ function updateJsonLd(tab: string) {
   const existing = document.getElementById('mw-seo-jsonld');
   if (existing) existing.remove();
 
-  const route = ROUTE_SEO[tab];
+  const route = ROUTE_SEO[tab] || ROUTE_SEO.home;
   const url = `${SITE_URL}${route.path === '/' ? '/' : route.path}`;
   const base = {
     '@context': 'https://schema.org',

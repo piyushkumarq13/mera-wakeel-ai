@@ -1,9 +1,10 @@
 import { CaseDeadline, DeadlineType } from '../../types/database';
 import { getSupabase, isValidUUID, toValidUUID, generateUUID } from './client';
+import { getAuthHeaders } from './authClient';
 
 export async function fetchCaseDeadlines(citizenId: string): Promise<CaseDeadline[]> {
   try {
-    const res = await fetch(`/api/db/deadlines?citizenId=${encodeURIComponent(citizenId)}`);
+    const res = await fetch(`/api/db/deadlines?citizenId=${encodeURIComponent(citizenId)}`, { headers: await getAuthHeaders() });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.deadlines)) return json.deadlines;

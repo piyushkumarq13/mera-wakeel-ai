@@ -18,10 +18,10 @@ export const Logo: React.FC<LogoProps> = ({ className = '', variant = 'dark' }) 
           src={APP_CONFIG.logoUrl}
           alt={`${APP_CONFIG.name} Logo`}
           onError={() => setImageError(true)}
-          className="w-10 h-10 object-contain rounded-xl shrink-0"
+          className="w-8 h-8 md:w-10 md:h-10 object-contain rounded-xl shrink-0"
         />
       ) : (
-        <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-[#FFFFFF] border-2 border-[#D98800] shadow-xs overflow-hidden p-1 shrink-0">
+        <div className="relative flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full bg-[#FFFFFF] border-2 border-[#D98800] shadow-xs overflow-hidden p-1 shrink-0">
           <svg
             viewBox="0 0 32 32"
             fill="none"
@@ -61,12 +61,12 @@ export const Logo: React.FC<LogoProps> = ({ className = '', variant = 'dark' }) 
       )}
 
       {/* Wordmark */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-[#D4A017] font-bold text-xl tracking-tight">
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
+        <span className="text-[#D4A017] font-bold text-lg tracking-tight">
           {APP_CONFIG.hindiName.split(' ')[0]}
         </span>
         <span
-          className={`font-bold text-xl tracking-tight ${
+          className={`font-bold text-lg tracking-tight ${
             isDarkText ? 'text-[#1F3864]' : 'text-[#FFFFFF]'
           }`}
         >

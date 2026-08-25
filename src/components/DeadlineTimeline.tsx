@@ -84,8 +84,9 @@ export function DeadlineTimeline({ language, citizenId, caseId, title }: Deadlin
   };
 
   const handleSave = async () => {
-    if (!citizenId || !formCaseId || !formDate) return;
-    const created = await addCaseDeadline(formCaseId, citizenId, formType, new Date(formDate).toISOString(), formNotes);
+    const targetCaseId = caseId || formCaseId;
+    if (!citizenId || !targetCaseId || !formDate) return;
+    const created = await addCaseDeadline(targetCaseId, citizenId, formType, new Date(formDate).toISOString(), formNotes);
     setShowAddForm(false);
     setFormNotes('');
     setFormDate('');
@@ -180,15 +181,6 @@ export function DeadlineTimeline({ language, citizenId, caseId, title }: Deadlin
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-600">{t(LOCAL.caseIdLabel)}</span>
-              <input
-                type="text"
-                value={formCaseId}
-                onChange={(e) => setFormCaseId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#D98800] focus:outline-none"
-              />
-            </label>
-            <label className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">{t(LOCAL.typeLabel)}</span>
               <select
                 value={formType}
@@ -209,7 +201,7 @@ export function DeadlineTimeline({ language, citizenId, caseId, title }: Deadlin
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#D98800] focus:outline-none"
               />
             </label>
-            <label className="block">
+            <label className="block sm:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">{t(LOCAL.notesLabel)}</span>
               <textarea
                 value={formNotes}

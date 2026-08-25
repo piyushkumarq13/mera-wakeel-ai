@@ -43,7 +43,9 @@ export async function sendGeminiChatMessage(
   caseId?: string | null,
   citizenId?: string | null,
   passedFactsBlock?: string | null,
-  category?: any
+  category?: any,
+  excludedLawyerIds?: string[],
+  signal?: AbortSignal
 ): Promise<GeminiChatResponse> {
   try {
     let factsBlock = passedFactsBlock || '';
@@ -77,6 +79,8 @@ export async function sendGeminiChatMessage(
         citizenId: citizenId || null,
         factsBlock: factsBlock || '',
         ragContext: ragContext || '',
+        caseCategory: category || null,
+        excludedLawyerIds: Array.isArray(excludedLawyerIds) ? excludedLawyerIds : [],
         file: file
           ? {
               mimeType: file.mimeType,
@@ -85,6 +89,7 @@ export async function sendGeminiChatMessage(
             }
           : null,
       }),
+      signal,
     });
 
     if (!response.ok) {

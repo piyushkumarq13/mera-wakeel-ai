@@ -9,6 +9,7 @@ export interface ServerContext {
   geminiApiKey: string | undefined;
   GUEST_PROFILE_ID: string;
   DEFAULT_CITIZEN_ID: string;
+  adminUsesServiceRole: boolean;
   escapeXml(value: string): string;
   requestLogger(source: string, message: string): void;
   trackAnalyticsEvent(eventName: string, payload?: any, userId?: string | null): Promise<boolean>;
@@ -24,14 +25,16 @@ export interface ServerContext {
   toUuid(id: string): string;
   serverEnsureProfile(profileId?: string): Promise<string>;
   serverEnsureCase(caseId: string, citizenId?: string): Promise<string>;
+  serverResolveLawyerId(lawyerId?: string): Promise<string | null>;
 }
 
 export function createServerContext(opts: {
   supabaseAdmin: any;
   geminiApiKey: string | undefined;
   geminiBase: string;
+  adminUsesServiceRole: boolean;
 }): ServerContext {
-  const { supabaseAdmin, geminiApiKey, geminiBase } = opts;
+  const { supabaseAdmin, geminiApiKey, geminiBase, adminUsesServiceRole } = opts;
 
   function isUuid(str: string): boolean {
     if (!str) return false;
@@ -112,6 +115,49 @@ export function createServerContext(opts: {
       console.warn('serverEnsureCase warning:', err);
       return validCaseId;
     }
+  }
+
+  /**
+   * Resolve the canonical lawyers row id (lawyers.id) from whatever identifier the
+   * client passed in. The client may pass:
+   *   - the lawyers row id itself (UUID),
+   *   - the lawyer's profile id / auth user id (UUID),
+   *   - a legacy seed id (e.g. 'lawyer_rajesh_sharma', non-UUID).
+   * Returns null when no matching lawyer row exists (so callers can 400 "Lawyer not found").
+   */
+  async function serverResolveLawyerId(lawyerId?: string): Promise<string | null> {
+    if (!lawyerId) return null;
+    if (!supabaseAdmin) return isUuid(lawyerId) ? lawyerId : toUuid(lawyerId);
+
+    if (isUuid(lawyerId)) {
+      // 1) Treat it as a profile_id (auth user id) and resolve to the row id.
+      try {
+        const { data: rowId } = await supabaseAdmin.rpc('resolve_lawyer_row', { profile_id: lawyerId });
+        if (rowId && isUuid(String(rowId))) {
+          return String(rowId);
+        }
+      } catch (_e) {
+        // migration 001 may not be applied yet - fall through to direct query
+      }
+      // 2) It may already be the row id itself.
+      try {
+        const { data: byId } = await supabaseAdmin.from('lawyers').select('id').eq('id', lawyerId).maybeSingle();
+        if (byId?.id) return byId.id;
+      } catch (_e) { /* ignore */ }
+      return null;
+    }
+
+    // 3) Legacy/seed id -> deterministic UUID, then confirm the row exists.
+    const deterministicId = toUuid(lawyerId);
+    try {
+      const { data } = await supabaseAdmin
+        .from('lawyers')
+        .select('id')
+        .or(`id.eq.${deterministicId},profile_id.eq.${deterministicId}`)
+        .maybeSingle();
+      if (data?.id) return data.id;
+    } catch (_e) { /* ignore */ }
+    return null;
   }
 
   function escapeXml(value: string): string {
@@ -239,6 +285,7 @@ export function createServerContext(opts: {
     geminiApiKey,
     GUEST_PROFILE_ID,
     DEFAULT_CITIZEN_ID,
+    adminUsesServiceRole,
     escapeXml,
     requestLogger,
     trackAnalyticsEvent,
@@ -249,5 +296,6 @@ export function createServerContext(opts: {
     toUuid,
     serverEnsureProfile,
     serverEnsureCase,
+    serverResolveLawyerId,
   };
 }

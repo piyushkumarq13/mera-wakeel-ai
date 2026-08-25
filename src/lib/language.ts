@@ -1,5 +1,5 @@
 /** Union of all supported language and script-mode codes. */
-export type LanguageCode = 'hi' | 'en' | 'hinglish' | 'ta' | 'te' | 'mr' | 'bn' | 'kn' | 'gu';
+export type LanguageCode = 'hi' | 'en' | 'hinglish' | 'ta' | 'te' | 'mr' | 'bn' | 'kn' | 'gu' | 'ml' | 'pa' | 'or' | 'ur';
 
 /** Static metadata for every supported language. */
 export const LANGUAGES: {
@@ -10,13 +10,17 @@ export const LANGUAGES: {
 }[] = [
   { code: 'hi', label: 'Hindi', nativeLabel: 'हिन्दी', script: 'Devanagari' },
   { code: 'en', label: 'English', nativeLabel: 'English', script: 'Latin' },
-  { code: 'hinglish', label: 'Hinglish', nativeLabel: 'हिंग्लिश', script: 'Latin' },
-  { code: 'ta', label: 'Tamil', nativeLabel: 'தமிழ்', script: 'Tamil' },
-  { code: 'te', label: 'Telugu', nativeLabel: 'తెలుగు', script: 'Telugu' },
+  { code: 'hinglish', label: 'Hinglish', nativeLabel: 'Hinglish', script: 'Latin' },
   { code: 'mr', label: 'Marathi', nativeLabel: 'मराठी', script: 'Devanagari' },
   { code: 'bn', label: 'Bengali', nativeLabel: 'বাংলা', script: 'Bengali' },
-  { code: 'kn', label: 'Kannada', nativeLabel: 'ಕನ್ನಡ', script: 'Kannada' },
+  { code: 'ta', label: 'Tamil', nativeLabel: 'தமிழ்', script: 'Tamil' },
+  { code: 'te', label: 'Telugu', nativeLabel: 'తెలుగు', script: 'Telugu' },
   { code: 'gu', label: 'Gujarati', nativeLabel: 'ગુજરાતી', script: 'Gujarati' },
+  { code: 'kn', label: 'Kannada', nativeLabel: 'ಕನ್ನಡ', script: 'Kannada' },
+  { code: 'ml', label: 'Malayalam', nativeLabel: 'മലയാളം', script: 'Malayalam' },
+  { code: 'pa', label: 'Punjabi', nativeLabel: 'ਪੰਜਾਬੀ', script: 'Gurmukhi' },
+  { code: 'or', label: 'Odia', nativeLabel: 'ଓଡ଼ିଆ', script: 'Odia' },
+  { code: 'ur', label: 'Urdu', nativeLabel: 'اردو', script: 'Arabic' },
 ];
 
 const DEVANAGARI = /[\u0900-\u097F]/;
@@ -25,6 +29,10 @@ const TELUGU = /[\u0C00-\u0C7F]/;
 const BENGALI = /[\u0980-\u09FF]/;
 const KANNADA = /[\u0C80-\u0CFF]/;
 const GUJARATI = /[\u0A80-\u0AFF]/;
+const MALAYALAM = /[\u0D00-\u0D7F]/;
+const GURMUKHI = /[\u0A00-\u0A7F]/;
+const ODIA = /[\u0B00-\u0B7F]/;
+const ARABIC = /[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const LATIN = /[\u0041-\u005A\u0061-\u007A]/;
 
 const MARATHI_STRONG_MARKERS = new Set([
@@ -91,6 +99,10 @@ export function detectLanguage(text: string): LanguageCode {
   let bengali = 0;
   let kannada = 0;
   let gujarati = 0;
+  let malayalam = 0;
+  let gurmukhi = 0;
+  let odia = 0;
+  let arabic = 0;
   let latin = 0;
 
   for (const ch of trimmed) {
@@ -100,16 +112,24 @@ export function detectLanguage(text: string): LanguageCode {
     else if (BENGALI.test(ch)) bengali++;
     else if (KANNADA.test(ch)) kannada++;
     else if (GUJARATI.test(ch)) gujarati++;
+    else if (MALAYALAM.test(ch)) malayalam++;
+    else if (GURMUKHI.test(ch)) gurmukhi++;
+    else if (ODIA.test(ch)) odia++;
+    else if (ARABIC.test(ch)) arabic++;
     else if (LATIN.test(ch)) latin++;
   }
 
-  const totalScript = devanagari + tamil + telugu + bengali + kannada + gujarati + latin;
+  const totalScript = devanagari + tamil + telugu + bengali + kannada + gujarati + malayalam + gurmukhi + odia + arabic + latin;
 
+  if (arabic > 0 && arabic >= latin) return 'ur';
   if (tamil > 0 && tamil >= latin) return 'ta';
   if (telugu > 0 && telugu >= latin) return 'te';
   if (bengali > 0 && bengali >= latin) return 'bn';
   if (kannada > 0 && kannada >= latin) return 'kn';
   if (gujarati > 0 && gujarati >= latin) return 'gu';
+  if (malayalam > 0 && malayalam >= latin) return 'ml';
+  if (gurmukhi > 0 && gurmukhi >= latin) return 'pa';
+  if (odia > 0 && odia >= latin) return 'or';
   if (latin > 0 && latin >= devanagari) return classifyLatin(trimmed);
   if (devanagari > 0) {
     const marathiScore = countMarathiMarkers(trimmed);
@@ -143,6 +163,10 @@ export function detectLanguageWithStats(text: string): LanguageStats {
   let bengali = 0;
   let kannada = 0;
   let gujarati = 0;
+  let malayalam = 0;
+  let gurmukhi = 0;
+  let odia = 0;
+  let arabic = 0;
   let latin = 0;
 
   for (const ch of trimmed) {
@@ -152,10 +176,14 @@ export function detectLanguageWithStats(text: string): LanguageStats {
     else if (BENGALI.test(ch)) bengali++;
     else if (KANNADA.test(ch)) kannada++;
     else if (GUJARATI.test(ch)) gujarati++;
+    else if (MALAYALAM.test(ch)) malayalam++;
+    else if (GURMUKHI.test(ch)) gurmukhi++;
+    else if (ODIA.test(ch)) odia++;
+    else if (ARABIC.test(ch)) arabic++;
     else if (LATIN.test(ch)) latin++;
   }
 
-  const totalScript = devanagari + tamil + telugu + bengali + kannada + gujarati + latin;
+  const totalScript = devanagari + tamil + telugu + bengali + kannada + gujarati + malayalam + gurmukhi + odia + arabic + latin;
 
   const scores: Record<Exclude<LanguageCode, 'hinglish'>, number> = {
     hi: devanagari,
@@ -166,24 +194,36 @@ export function detectLanguageWithStats(text: string): LanguageStats {
     bn: bengali,
     kn: kannada,
     gu: gujarati,
+    ml: malayalam,
+    pa: gurmukhi,
+    or: odia,
+    ur: arabic,
   };
 
   const scriptName =
-    tamil > 0 && tamil >= latin
-      ? 'Tamil'
-      : telugu > 0 && telugu >= latin
-        ? 'Telugu'
-        : bengali > 0 && bengali >= latin
-          ? 'Bengali'
-          : kannada > 0 && kannada >= latin
-            ? 'Kannada'
-            : gujarati > 0 && gujarati >= latin
-              ? 'Gujarati'
-              : devanagari > 0 && devanagari >= latin
-                ? 'Devanagari'
-                : latin > 0
-                  ? 'Latin'
-                  : 'Unknown';
+    arabic > 0 && arabic >= latin
+      ? 'Arabic'
+      : tamil > 0 && tamil >= latin
+        ? 'Tamil'
+        : telugu > 0 && telugu >= latin
+          ? 'Telugu'
+          : bengali > 0 && bengali >= latin
+            ? 'Bengali'
+            : kannada > 0 && kannada >= latin
+              ? 'Kannada'
+              : gujarati > 0 && gujarati >= latin
+                ? 'Gujarati'
+                : malayalam > 0 && malayalam >= latin
+                  ? 'Malayalam'
+                  : gurmukhi > 0 && gurmukhi >= latin
+                    ? 'Gurmukhi'
+                    : odia > 0 && odia >= latin
+                      ? 'Odia'
+                      : devanagari > 0 && devanagari >= latin
+                        ? 'Devanagari'
+                        : latin > 0
+                          ? 'Latin'
+                          : 'Unknown';
 
   const language = detectLanguage(trimmed);
 
@@ -254,6 +294,27 @@ export function languageInstructions(lang: LanguageCode): string {
       return (
         'CRITICAL LANGUAGE RULE: Respond in Gujarati as a caring senior female advocate, ' +
         'address user as Sir or Ma\'am. Keep legal explanations simple and reassuring.'
+      );
+    case 'ml':
+      return (
+        'CRITICAL LANGUAGE RULE: Respond in Malayalam as a caring senior female advocate, ' +
+        'address user as Sir or Ma\'am. Keep legal explanations simple and reassuring.'
+      );
+    case 'pa':
+      return (
+        'CRITICAL LANGUAGE RULE: Respond in Punjabi (Gurmukhi script) as a caring senior female advocate, ' +
+        'address user as Sir or Ma\'am. Keep legal explanations simple and reassuring.'
+      );
+    case 'or':
+      return (
+        'CRITICAL LANGUAGE RULE: Respond in Odia as a caring senior female advocate, ' +
+        'address user as Sir or Ma\'am. Keep legal explanations simple and reassuring.'
+      );
+    case 'ur':
+      return (
+        'CRITICAL LANGUAGE RULE: Respond in Urdu (Nastaliq/Arabic script) as a caring senior female advocate, ' +
+        'address user as Sir or Ma\'am. Keep legal explanations simple and reassuring. ' +
+        'Use formal Urdu vocabulary. Respond in RTL format.'
       );
     case 'en':
       return (

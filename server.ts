@@ -13,6 +13,8 @@ import { registerAnalyticsRoutes } from "./src/routes/analytics";
 import { registerAuthRoutes } from "./src/routes/auth";
 import { registerAdminRoutes } from "./src/routes/admin";
 import { registerAiRoutes } from "./src/routes/ai";
+import { registerCaseSummaryRoutes } from "./src/routes/caseSummary";
+import { registerPdfRoutes } from "./src/routes/pdf";
 
 dotenv.config();
 
@@ -52,7 +54,7 @@ if (geminiApiKey && !geminiApiKey.trim().startsWith('AIza') && !geminiApiKey.tri
   console.error('Groq + deterministic embeddings, but Gemini features need a valid key.');
 }
 
-const ctx = createServerContext({ supabaseAdmin, geminiApiKey, geminiBase: GEMINI_BASE });
+const ctx = createServerContext({ supabaseAdmin, geminiApiKey, geminiBase: GEMINI_BASE, adminUsesServiceRole });
 
 async function startServer() {
   const app = express();
@@ -80,6 +82,8 @@ async function startServer() {
   registerAuthRoutes(app, ctx);
   registerAdminRoutes(app, ctx);
   registerAiRoutes(app, ctx);
+  registerCaseSummaryRoutes(app, ctx);
+  registerPdfRoutes(app, ctx);
 
   // SCHEDULED JOB: Deadline reminders (item 5)
   // Runs daily at 9:00 AM IST (03:30 UTC). Finds case_deadlines within the next

@@ -1,8 +1,8 @@
-export type Language = 'hi' | 'en' | 'hinglish' | 'ta' | 'te' | 'mr' | 'bn' | 'kn' | 'gu';
+export type Language = 'hi' | 'en' | 'hinglish' | 'ta' | 'te' | 'mr' | 'bn' | 'kn' | 'gu' | 'ml' | 'pa' | 'or' | 'ur';
 
-export type UserRole = 'citizen' | 'lawyer';
+export type UserRole = 'citizen' | 'lawyer' | 'admin';
 
-export type NavTab = 'home' | 'how-it-works' | 'for-lawyers' | 'my-cases' | 'chat' | 'lawyers' | 'advocates' | 'documents' | 'settings' | 'auth' | 'privacy' | 'terms' | 'draft-documents' | 'free-legal-aid' | 'admin' | 'help';
+export type NavTab = 'home' | 'how-it-works' | 'for-lawyers' | 'my-cases' | 'chat' | 'call' | 'lawyers' | 'advocates' | 'documents' | 'settings' | 'auth' | 'register' | 'privacy' | 'terms' | 'draft-documents' | 'free-legal-aid' | 'admin' | 'knowledge-base' | 'support' | 'messages' | 'case-report';
 
 export interface TrustStat {
   label: string;
@@ -45,5 +45,17 @@ export interface DemoCaseResult {
   id: string;
   title: string;
   status: string;
+}
+
+export interface AppNotification {
+  id: string;
+  type: 'connection_accepted' | 'connection_declined' | 'new_request'
+      | 'new_message' | 'deadline_soon';
+  message: string;
+  icon: string;
+  is_read: boolean;
+  linkTab?: NavTab;
+  created_at: string;
+  timeAgo: string;
 }
 

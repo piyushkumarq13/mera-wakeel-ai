@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Language } from '../../types';
-import { Paperclip, Scale, ShieldCheck, Volume2, Sparkles } from 'lucide-react';
+import { Paperclip, Scale, ShieldCheck, Volume2, Sparkles, Copy, Check, X } from 'lucide-react';
 import { APP_CONFIG } from '../../constants';
 import { ChatMessage, extractCitations, QUICK_CHIPS } from './parts';
 
@@ -14,6 +14,45 @@ interface ChatMessageListProps {
   stopSpeechOutput: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   onQuickChip: (chip: string) => void;
+  onRetryMessage?: (messageId: string) => void;
+}
+
+function MarkdownRenderer({ text }: { text: string }) {
+  // Simple safe markdown parser for bold, headers, bullet lists
+  const lines = text.split('\n');
+  return (
+    <div className="whitespace-pre-wrap">
+      {lines.map((line, idx) => {
+        // Headers
+        if (line.startsWith('### ')) {
+          return <h3 key={idx} className="text-sm font-bold text-[#0F1D38] mt-2 mb-1">{line.slice(4)}</h3>;
+        }
+        if (line.startsWith('## ')) {
+          return <h2 key={idx} className="text-base font-bold text-[#0F1D38] mt-2 mb-1">{line.slice(3)}</h2>;
+        }
+        if (line.startsWith('# ')) {
+          return <h1 key={idx} className="text-lg font-bold text-[#0F1D38] mt-2 mb-1">{line.slice(2)}</h1>;
+        }
+        // Bullet lists
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+          return <p key={idx} className="ml-4 flex items-start gap-2"><span className="text-[#D98800] shrink-0">•</span>{line.slice(2)}</p>;
+        }
+        // Bold inline
+        const parts = line.split(/(\*\*.*?\*\*)/);
+        return (
+          <p key={idx}>
+            {parts.map((part, pi) =>
+              part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
+                <strong key={pi} className="font-bold">{part.slice(2, -2)}</strong>
+              ) : (
+                part
+              )
+            )}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({
@@ -26,7 +65,10 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   stopSpeechOutput,
   messagesEndRef,
   onQuickChip,
+  onRetryMessage,
 }) => {
+  const [citationPopover, setCitationPopover] = useState<{ citation: string; x: number; y: number } | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
       {messages.map((msg) => {
@@ -66,19 +108,23 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                 </div>
               )}
 
-              <div className="whitespace-pre-wrap">{msg.content}</div>
+              {isUser ? (
+                <div className="whitespace-pre-wrap">{msg.content}</div>
+              ) : (
+                <MarkdownRenderer text={msg.content} />
+              )}
 
               {!isUser && extractCitations(msg.content).length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {extractCitations(msg.content).map((c, ci) => (
                     <button
                       key={ci}
-                      onClick={() => {
-                        navigator.clipboard?.writeText(c).catch(() => {});
-                        alert(`Legal Reference: ${c}\n\n(Content is informational guidance only.)`);
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setCitationPopover({ citation: c, x: rect.left + window.scrollX, y: rect.top + window.scrollY - 80 });
                       }}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#0F1D38] text-[#F5A623] text-[10px] font-bold border border-[#F5A623]/50 cursor-pointer hover:bg-[#1E2E4F] transition-all"
-                      title={`Cite: ${c} — click to copy`}
+                      title={`Cite: ${c} — click to view`}
                     >
                       <Scale className="w-3 h-3" />
                       {c}
@@ -105,19 +151,52 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                     : 'Just now'}
                 </span>
                 {!isUser && (
+                  <>
+                    <button
+                      onClick={() => {
+                        if (isSpeaking) {
+                          stopSpeechOutput();
+                        } else {
+                          speakText(msg.content);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F1D38] text-[11px] font-semibold transition-all cursor-pointer border border-[#CBD5E1]"
+                      title="Aawaaz mein suno"
+                    >
+                      <Volume2 className={`w-3.5 h-3.5 ${isSpeaking ? 'text-[#D98800] animate-bounce' : 'text-[#64748B]'}`} />
+                      <span>{isSpeaking ? 'Roko (Stop)' : 'Aawaaz mein Suno'}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(msg.content).catch(() => {});
+                        setCopiedMessageId(msg.id);
+                        setTimeout(() => setCopiedMessageId(null), 1500);
+                      }}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F1D38] text-[11px] font-semibold transition-all cursor-pointer border border-[#CBD5E1]"
+                      title="Copy message"
+                    >
+                      {copiedMessageId === msg.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-[#16A34A]" />
+                          <span className="hidden sm:inline text-[#16A34A]">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-[#64748B]" />
+                          <span className="hidden sm:inline">Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+                {msg.isError && onRetryMessage && (
                   <button
-                    onClick={() => {
-                      if (isSpeaking) {
-                        stopSpeechOutput();
-                      } else {
-                        speakText(msg.content);
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F1D38] text-[11px] font-semibold transition-all cursor-pointer border border-[#CBD5E1]"
-                    title="Aawaaz mein suno"
+                    onClick={() => onRetryMessage(msg.id)}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#FEF2F2] hover:bg-[#FECACA] text-[#DC2626] text-[11px] font-semibold transition-all cursor-pointer border border-[#EF4444]/50"
+                    title="Retry"
                   >
-                    <Volume2 className={`w-3.5 h-3.5 ${isSpeaking ? 'text-[#D98800] animate-bounce' : 'text-[#64748B]'}`} />
-                    <span>{isSpeaking ? 'Roko (Stop)' : 'Aawaaz mein Suno'}</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Retry</span>
                   </button>
                 )}
               </div>
@@ -198,6 +277,38 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       )}
 
       <div ref={messagesEndRef} />
+      {citationPopover && (
+        <div
+          className="fixed z-50 bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-4 shadow-xl max-w-sm"
+          style={{ left: citationPopover.x, top: citationPopover.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <p className="text-xs font-bold text-[#0F1D38] mb-1">Legal Citation</p>
+              <p className="text-sm text-[#1E293B] font-mono bg-[#F8FAFC] p-2 rounded border border-[#E2E8F0]">{citationPopover.citation}</p>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(citationPopover.citation).catch(() => {});
+                setCitationPopover(null);
+              }}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-[#0F1D38] text-[#F5A623] text-[10px] font-bold border border-[#F5A623]/50 cursor-pointer hover:bg-[#1E2E4F] transition-all shrink-0"
+              title="Copy citation"
+            >
+              <Copy className="w-3 h-3" />
+              <span>Copy</span>
+            </button>
+          </div>
+          <button
+            onClick={() => setCitationPopover(null)}
+            className="absolute top-1 right-1 p-1 text-[#64748B] hover:text-[#EF4444] cursor-pointer"
+            title="Close"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

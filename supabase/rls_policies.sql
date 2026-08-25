@@ -66,6 +66,7 @@ grant usage on schema public to anon, authenticated;
 grant select on lawyers to anon;
 grant select on reviews to anon;
 grant select on legal_knowledge_base to anon;
+grant select on profiles to anon;
 
 -- AUTHENTICATED: citizen + lawyer client operations
 grant select on profiles to authenticated;
@@ -116,6 +117,15 @@ for select using (
     where lc.citizen_id = profiles.id
       and l.profile_id = auth.uid()
       and lc.status = 'accepted'
+  )
+);
+-- Public professional info: anyone can read profiles of registered lawyers
+-- (needed for the lawyer directory listing).
+create policy "profiles_select_public_for_lawyers" on profiles
+for select using (
+  exists (
+    select 1 from lawyers l
+    where l.profile_id = profiles.id
   )
 );
 
